@@ -70,6 +70,10 @@
       margin-right: 6px;
       animation: pulse 2s infinite;
     }
+    .status-dot.stale {
+      background: #e3b341;
+      animation: none;
+    }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -1081,11 +1085,35 @@
       };
     }
 
-    const lu = DATA.last_updated
-      ? 'Updated: ' + formatDate(DATA.last_updated)
-      : 'Waiting for first data...';
-    document.getElementById('lastUpdated').innerHTML =
-      `<span class="status-dot"></span>${lu}`;
+    function updateFreshness() {
+      if (!DATA.last_updated) {
+        document.getElementById('lastUpdated').innerHTML =
+          `<span class="status-dot"></span>Waiting for first data...`;
+        return;
+      }
+      const now = new Date();
+      const updated = new Date(DATA.last_updated);
+      const diffMin = Math.floor((now - updated) / 60000);
+
+      const timeStr = updated.toLocaleTimeString('en-GB', {
+        timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+
+      let agoStr;
+      if (diffMin < 1)       agoStr = 'just now';
+      else if (diffMin === 1) agoStr = '1 min ago';
+      else                    agoStr = `${diffMin} min ago`;
+
+      const isStale = diffMin > 20;
+      const dotClass = isStale ? 'status-dot stale' : 'status-dot';
+      const warning  = isStale ? ' ⚠️' : '';
+
+      document.getElementById('lastUpdated').innerHTML =
+        `<span class="${dotClass}"></span>Updated: ${timeStr} (${agoStr}${warning}) · ~15 min refresh`;
+    }
+
+    updateFreshness();
+    setInterval(updateFreshness, 30000);
 
     renderStats();
     renderDailyChart();
