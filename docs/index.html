@@ -468,6 +468,7 @@
   <button data-tab="ranking">Ranking</button>
   <button data-tab="bycity">By City</button>
   <button data-tab="byhour">By Hour</button>
+  <button data-tab="shelter">Shelter Time</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
 </nav>
@@ -593,6 +594,36 @@
       <h2>Alerts by Day of Week</h2>
       <div class="chart-wrap">
         <canvas id="chartByDow"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SHELTER TIME ===== -->
+  <div id="tab-shelter" class="tab-content">
+    <div class="stats-grid" id="shelterStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>Top 10 Cities by Total Shelter Time</h2>
+      <div class="chart-wrap-tall" id="shelterChartWrap">
+        <canvas id="chartShelter"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>All Cities — Shelter Time</h2>
+      <input type="text" id="shelterSearch" class="city-search" placeholder="Search city…" oninput="filterShelterTable()" />
+      <div style="overflow-x:auto;">
+        <table class="alerts-table" id="shelterTable">
+          <thead>
+            <tr>
+              <th onclick="sortShelterTable('city')" style="cursor:pointer">City ↕</th>
+              <th onclick="sortShelterTable('min')" style="cursor:pointer">Shelter Time ↕</th>
+              <th onclick="sortShelterTable('alerts')" style="cursor:pointer">Alerts ↕</th>
+              <th onclick="sortShelterTable('drone')" style="cursor:pointer">✈️ Drone ↕</th>
+            </tr>
+          </thead>
+          <tbody id="shelterBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -779,6 +810,8 @@
       { value: todayAlerts, label: 'Today' },
       { value: REGIONS.filter(r => (regions[r] || 0) > 0).length, label: 'Regions Affected' },
       { value: topRegion ? topRegion[1] : 0, label: `Most Hit: ${topRegion ? topRegion[0] : '—'}` },
+      { value: DATA.drone_alerts ?? 0, label: '✈️ Drone Alerts' },
+      { value: (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0), label: '🚀 Rocket / Missile Alerts' },
     ];
 
     document.getElementById('statsGrid').innerHTML = cards.map(c => `
@@ -828,7 +861,7 @@
     tbody.innerHTML = recent.map(a => `
       <tr>
         <td style="white-space:nowrap;color:#8b949e">${formatDate(a.date)}</td>
-        <td>${(a.regions || []).map(r => `<span class="tag">${r}</span>`).join('')}</td>
+        <td style="white-space:nowrap">${a.type === 'drone' ? '✈️' : '🚀'} ${(a.regions || []).map(r => `<span class="tag">${r}</span>`).join('')}</td>
         <td style="color:#8b949e;max-width:350px;overflow:hidden;text-overflow:ellipsis">${a.text || ''}</td>
       </tr>
     `).join('');
@@ -920,6 +953,133 @@
         <span class="rank-count">${(regions[r] || 0).toLocaleString('en-US')}</span>
       </li>
     `).join('');
+  }
+
+  // ─── Shelter helpers ────────────────────────────────────────────────────────
+  function formatShelterTime(min) {
+    if (!min) return '0 min';
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m > 0 ? `${h}h ${m}min` : `${h}h`;
+  }
+
+  // Strip countdown suffixes like (**מיידי**) from city names (legacy data fix)
+  function cleanCity(name) {
+    return name.replace(/\s*\(\*\*.*?\*\*\)/g, '').trim();
+  }
+
+  let _shelterData = [];
+  let _shelterSort = { col: 'min', dir: -1 };
+
+  function renderShelter() {
+    const shelterRaw  = DATA.shelter_minutes  || {};
+    const citiesRaw   = DATA.cities           || {};
+    const droneCities = DATA.drone_cities     || {};
+
+    // Build unified row array, cleaning legacy city names
+    const map = {};
+    for (const [raw, min] of Object.entries(shelterRaw)) {
+      const city = cleanCity(raw);
+      if (!map[city]) map[city] = { city, min: 0, alerts: 0, drone: 0 };
+      map[city].min += min;
+    }
+    for (const [raw, count] of Object.entries(citiesRaw)) {
+      const city = cleanCity(raw);
+      if (!map[city]) map[city] = { city, min: 0, alerts: 0, drone: 0 };
+      map[city].alerts += count;
+    }
+    for (const [raw, count] of Object.entries(droneCities)) {
+      const city = cleanCity(raw);
+      if (!map[city]) map[city] = { city, min: 0, alerts: 0, drone: 0 };
+      map[city].drone += count;
+    }
+
+    _shelterData = Object.values(map).filter(r => r.min > 0 || r.alerts > 0);
+
+    // Stats
+    const totalMin = _shelterData.reduce((s, r) => s + r.min, 0);
+    const sorted   = [..._shelterData].sort((a, b) => b.min - a.min);
+    const top      = sorted[0] || {};
+    const totalCities = _shelterData.length;
+
+    document.getElementById('shelterStatsGrid').innerHTML = `
+      <div class="stat-card">
+        <div class="value">${Math.round(totalMin / 60).toLocaleString()}</div>
+        <div class="label">Total Shelter Hours (all cities)</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${top.city || '—'}</div>
+        <div class="label">Most Sheltered City</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${formatShelterTime(top.min || 0)}</div>
+        <div class="label">Most Sheltered City Time</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${totalCities}</div>
+        <div class="label">Cities Under Alert</div>
+      </div>
+    `;
+
+    // Top 10 bar chart
+    const top10   = sorted.slice(0, 10).reverse(); // reverse so biggest is at top
+    const height  = Math.max(300, top10.length * 40);
+    document.getElementById('shelterChartWrap').style.height = height + 'px';
+    destroyChart('chartShelter');
+    new Chart(document.getElementById('chartShelter'), {
+      type: 'bar',
+      data: {
+        labels: top10.map(r => r.city),
+        datasets: [{
+          label: 'Shelter Time (min)',
+          data: top10.map(r => r.min),
+          backgroundColor: '#f78166',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${formatShelterTime(ctx.parsed.x)}` } }
+        },
+        scales: {
+          x: { ticks: { color: '#8b949e', callback: v => formatShelterTime(v) }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+
+    renderShelterTable();
+  }
+
+  function renderShelterTable() {
+    const query  = (document.getElementById('shelterSearch')?.value || '').trim().toLowerCase();
+    const { col, dir } = _shelterSort;
+    const rows   = _shelterData
+      .filter(r => !query || r.city.includes(query))
+      .sort((a, b) => (col === 'city' ? a.city.localeCompare(b.city) : (b[col] - a[col])) * (dir < 0 ? 1 : -1));
+
+    document.getElementById('shelterBody').innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.city}</td>
+        <td style="color:#f78166;font-weight:600">${formatShelterTime(r.min)}</td>
+        <td>${r.alerts}</td>
+        <td>${r.drone > 0 ? `✈️ ${r.drone}` : '—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  function filterShelterTable() { renderShelterTable(); }
+
+  function sortShelterTable(col) {
+    _shelterSort = _shelterSort.col === col
+      ? { col, dir: _shelterSort.dir * -1 }
+      : { col, dir: -1 };
+    renderShelterTable();
   }
 
   function renderByHour() {
@@ -1243,6 +1403,7 @@
     renderRanking();
     renderByCity();
     renderByHour();
+    renderShelter();
     renderCompare();
     renderHeatmap();
   }

@@ -77,13 +77,27 @@ def is_alert(text: str) -> bool:
     return bool(text) and any(kw in text for kw in ALERT_KEYWORDS)
 
 
+def is_drone_alert(text: str) -> bool:
+    return bool(text) and "חדירת כלי טיס" in text and "האירוע הסתיים" not in text
+
+
+def event_end_type(text: str) -> str | None:
+    if not text or "האירוע הסתיים" not in text:
+        return None
+    if "חדירת כלי טיס" in text or "כלי טיס עוין" in text:
+        return "drone"
+    return "rocket"
+
+
 def extract_regions(text: str) -> list[str]:
     return [r for r in REGIONS if r in text]
 
 
 def extract_cities(text: str) -> list[str]:
-    """Extract city names from alert text.
-    Cities appear as a comma-separated list on the line after **אזור X** headers.
+    """
+    Extract city names from alert text.
+    Cities appear comma-separated on the line after **אזור X** headers.
+    Strips shelter-countdown suffixes like (**מיידי**) or (**30 שניות**).
     """
     cities = []
     lines = text.split("\n")
@@ -94,26 +108,32 @@ def extract_cities(text: str) -> list[str]:
             next_is_city_line = True
             continue
         if next_is_city_line:
-            if stripped and not stripped.startswith("**") and not stripped.startswith("🚨"):
+            if stripped and not stripped.startswith("**") and not stripped.startswith("🚨") and not stripped.startswith("✈"):
                 for city in stripped.split(","):
                     city = city.strip()
+                    # Remove shelter-countdown suffix: (**מיידי**) / (**30 שניות**) etc.
+                    city = re.sub(r'\s*\(\*\*.*?\*\*\)', '', city).strip()
                     if city and len(city) > 1:
                         cities.append(city)
             next_is_city_line = False
-    return list(dict.fromkeys(cities))  # deduplicate, preserve order
+    return list(dict.fromkeys(cities))
 
 
 async def backfill() -> None:
     start_date = datetime.strptime(BACKFILL_FROM, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     print(f"Backfilling from {start_date.date()} ...")
 
-    # Start with a completely fresh dataset
     data: dict = {
         "last_updated": None,
         "last_message_id": 0,
         "total_alerts": 0,
         "regions": {r: 0 for r in REGIONS},
         "cities": {},
+        "drone_alerts": 0,
+        "drone_regions": {},
+        "drone_cities": {},
+        "shelter_minutes": {},
+        "pending_shelter": [],
         "daily": {},
         "recent": [],
     }
@@ -131,9 +151,9 @@ async def backfill() -> None:
         try:
             async for msg in client.iter_messages(
                 entity,
-                reverse=True,       # oldest → newest
-                offset_date=start_date,  # start from this date going forward
-                limit=None,         # no cap — fetch everything
+                reverse=True,
+                offset_date=start_date,
+                limit=None,
             ):
                 messages.append(msg)
                 if len(messages) % 500 == 0:
@@ -142,7 +162,6 @@ async def backfill() -> None:
             wait = min(e.seconds, 120)
             print(f"FloodWaitError: sleeping {wait}s then continuing")
             await asyncio.sleep(wait)
-            # The messages collected so far are still usable
         except Exception as e:
             print(f"ERROR fetching messages: {e}")
             if not messages:
@@ -151,10 +170,33 @@ async def backfill() -> None:
     print(f"Total messages fetched: {len(messages)}")
 
     new_alerts = 0
-    for msg in messages:  # already chronological (oldest first) thanks to reverse=True
+    # pending_shelter for cross-message matching within this backfill run
+    pending_shelter: list[dict] = []
+
+    for msg in messages:  # chronological (oldest first) thanks to reverse=True
         text = msg.text or ""
         data["last_message_id"] = max(data["last_message_id"], msg.id)
+        msg_time = msg.date if msg.date.tzinfo else msg.date.replace(tzinfo=timezone.utc)
 
+        # ── Event-end message → resolve pending shelter ──────────────────────
+        end_type = event_end_type(text)
+        if end_type:
+            resolved = []
+            for p in pending_shelter:
+                start = datetime.fromisoformat(p["start"])
+                if start.tzinfo is None:
+                    start = start.replace(tzinfo=timezone.utc)
+                diff_min = (msg_time - start).total_seconds() / 60
+                if 0 < diff_min <= 180 and p.get("type", "rocket") == end_type:
+                    duration = max(10, int(diff_min))
+                    for city in p.get("cities", []):
+                        data["shelter_minutes"][city] = data["shelter_minutes"].get(city, 0) + duration
+                    resolved.append(p)
+            for r in resolved:
+                pending_shelter.remove(r)
+            continue
+
+        # ── Regular alert ────────────────────────────────────────────────────
         if not is_alert(text):
             continue
 
@@ -164,31 +206,48 @@ async def backfill() -> None:
 
         cities = extract_cities(text)
         date_str = msg.date.astimezone(timezone.utc).strftime("%Y-%m-%d")
+        a_type = "drone" if is_drone_alert(text) else "rocket"
+
         data["total_alerts"] += 1
         new_alerts += 1
 
         for region in regions:
             data["regions"][region] = data["regions"].get(region, 0) + 1
             data["daily"].setdefault(date_str, {})
-            data["daily"][date_str][region] = (
-                data["daily"][date_str].get(region, 0) + 1
-            )
+            data["daily"][date_str][region] = data["daily"][date_str].get(region, 0) + 1
 
         for city in cities:
             data["cities"][city] = data["cities"].get(city, 0) + 1
 
-        # Insert at front so recent[] is newest-first
-        data["recent"].insert(
-            0,
-            {
-                "id": msg.id,
-                "date": msg.date.isoformat(),
-                "text": text[:300],
-                "regions": regions,
-                "cities": cities,
-            },
-        )
+        if a_type == "drone":
+            data["drone_alerts"] += 1
+            for region in regions:
+                data["drone_regions"][region] = data["drone_regions"].get(region, 0) + 1
+            for city in cities:
+                data["drone_cities"][city] = data["drone_cities"].get(city, 0) + 1
 
+        pending_shelter.append({
+            "start": msg_time.isoformat(),
+            "cities": cities,
+            "type": a_type,
+        })
+
+        data["recent"].insert(0, {
+            "id": msg.id,
+            "date": msg.date.isoformat(),
+            "text": text[:300],
+            "regions": regions,
+            "cities": cities,
+            "type": a_type,
+        })
+
+    # Any remaining unmatched pending → default 10 min each
+    for p in pending_shelter:
+        for city in p.get("cities", []):
+            data["shelter_minutes"][city] = data["shelter_minutes"].get(city, 0) + 10
+
+    # pending_shelter is now empty (all resolved or defaulted)
+    data["pending_shelter"] = []
     data["recent"] = data["recent"][:100]
     data["last_updated"] = datetime.now(timezone.utc).isoformat()
 
@@ -196,10 +255,13 @@ async def backfill() -> None:
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+    total_shelter_hours = sum(data["shelter_minutes"].values()) / 60
     print(
         f"Done — {new_alerts} alerts saved, "
+        f"{data['drone_alerts']} drone alerts, "
         f"last_message_id={data['last_message_id']}, "
-        f"days covered={len(data['daily'])}"
+        f"days covered={len(data['daily'])}, "
+        f"total shelter time={total_shelter_hours:.0f}h across all cities"
     )
 
 
