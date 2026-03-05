@@ -69,12 +69,17 @@ ALERT_KEYWORDS = [
 def load_data() -> dict:
     if DATA_FILE.exists():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        # Migrate: add cities field if missing from older data
+        if "cities" not in data:
+            data["cities"] = {}
+        return data
     return {
         "last_updated": None,
         "last_message_id": 0,
         "total_alerts": 0,
         "regions": {r: 0 for r in REGIONS},
+        "cities": {},
         "daily": {},
         "recent": [],
     }
@@ -92,6 +97,31 @@ def is_alert(text: str) -> bool:
 
 def extract_regions(text: str) -> list[str]:
     return [r for r in REGIONS if r in text]
+
+
+def extract_cities(text: str) -> list[str]:
+    """Extract city names from alert text.
+    Cities appear as a comma-separated list on the line after **אזור X** headers.
+    Example:
+        **אזור ירושלים**
+        אבן ספיר, אורה, בית זית, גבעון החדשה, ...
+    """
+    cities = []
+    lines = text.split("\n")
+    next_is_city_line = False
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"\*\*אזור .+\*\*", stripped):
+            next_is_city_line = True
+            continue
+        if next_is_city_line:
+            if stripped and not stripped.startswith("**") and not stripped.startswith("🚨"):
+                for city in stripped.split(","):
+                    city = city.strip()
+                    if city and len(city) > 1:
+                        cities.append(city)
+            next_is_city_line = False
+    return list(dict.fromkeys(cities))  # deduplicate, preserve order
 
 
 async def collect() -> None:
@@ -144,6 +174,7 @@ async def collect() -> None:
         if not regions:
             continue
 
+        cities = extract_cities(text)
         date_str = msg.date.astimezone(timezone.utc).strftime("%Y-%m-%d")
         data["total_alerts"] += 1
         new_alerts += 1
@@ -155,6 +186,9 @@ async def collect() -> None:
                 data["daily"][date_str].get(region, 0) + 1
             )
 
+        for city in cities:
+            data["cities"][city] = data["cities"].get(city, 0) + 1
+
         # Keep latest 100 alerts
         data["recent"].insert(
             0,
@@ -163,6 +197,7 @@ async def collect() -> None:
                 "date": msg.date.isoformat(),
                 "text": text[:300],
                 "regions": regions,
+                "cities": cities,
             },
         )
 

@@ -331,6 +331,33 @@
       width: 260px;
     }
 
+    /* City search */
+    .city-search {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 14px;
+      margin-bottom: 14px;
+      width: 100%;
+      max-width: 360px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .city-search:focus { border-color: var(--blue); }
+
+    .city-tag {
+      display: inline-block;
+      background: rgba(88,166,255,0.12);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.25);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      margin: 2px 2px 2px 0;
+    }
+
     /* Loading / empty states */
     .empty {
       text-align: center;
@@ -365,6 +392,7 @@
   <button class="active" data-tab="general">General</button>
   <button data-tab="byregion">By Region</button>
   <button data-tab="ranking">Ranking</button>
+  <button data-tab="bycity">By City</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
 </nav>
@@ -422,6 +450,41 @@
     <div class="chart-card">
       <h2>Region Ranking by Alert Count</h2>
       <ul class="rank-list" id="rankList"></ul>
+    </div>
+  </div>
+
+  <!-- ===== BY CITY ===== -->
+  <div id="tab-bycity" class="tab-content">
+    <div class="stats-grid" id="cityStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>Top 20 Cities by Alert Count</h2>
+      <div class="chart-wrap-tall">
+        <canvas id="chartByCity"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>All Cities</h2>
+      <input
+        type="text"
+        id="citySearch"
+        class="city-search"
+        placeholder="🔍  Search city..."
+        oninput="filterCityTable()"
+      />
+      <div style="overflow-x:auto;">
+        <table class="alerts-table" id="cityTable">
+          <thead>
+            <tr>
+              <th style="width:44px">#</th>
+              <th style="cursor:pointer" onclick="sortCityTable('name')">City ⇅</th>
+              <th style="cursor:pointer;text-align:right" onclick="sortCityTable('count')">Alerts ⇅</th>
+            </tr>
+          </thead>
+          <tbody id="cityTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -763,6 +826,92 @@
       '<span>More</span>';
   }
 
+  // ─── By City ───────────────────────────────────────────────────────────────
+  let citySortKey = 'count';
+  let citySortAsc = false;
+  let allCityRows = [];
+
+  function renderByCity() {
+    const cities = DATA.cities || {};
+    const sorted = Object.entries(cities).sort((a, b) => b[1] - a[1]);
+    const totalCities = sorted.length;
+    const topCity = sorted[0];
+
+    // Stats cards
+    document.getElementById('cityStatsGrid').innerHTML = [
+      { value: totalCities, label: 'Unique Cities' },
+      { value: topCity ? topCity[1] : 0, label: `Most Hit City: ${topCity ? topCity[0] : '—'}` },
+    ].map(c => `
+      <div class="stat-card">
+        <div class="value">${c.value.toLocaleString('en-US')}</div>
+        <div class="label">${c.label}</div>
+      </div>
+    `).join('');
+
+    // Top 20 bar chart
+    const top20 = sorted.slice(0, 20);
+    destroyChart('chartByCity');
+    new Chart(document.getElementById('chartByCity'), {
+      type: 'bar',
+      data: {
+        labels: top20.map(([name]) => name),
+        datasets: [{
+          label: 'Alerts',
+          data: top20.map(([, count]) => count),
+          backgroundColor: top20.map((_, i) => `hsla(${210 + i * 6}, 70%, 55%, 0.75)`),
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+
+    // Full table rows
+    allCityRows = sorted.map(([name, count], i) => ({ rank: i + 1, name, count }));
+    citySortKey = 'count';
+    citySortAsc = false;
+    renderCityTable();
+  }
+
+  function renderCityTable() {
+    const query = (document.getElementById('citySearch')?.value || '').toLowerCase();
+    let rows = allCityRows.filter(r => r.name.includes(query) || query === '');
+
+    rows.sort((a, b) => {
+      const av = a[citySortKey], bv = b[citySortKey];
+      if (typeof av === 'string') return citySortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return citySortAsc ? av - bv : bv - av;
+    });
+
+    const maxCount = allCityRows[0]?.count || 1;
+    document.getElementById('cityTableBody').innerHTML = rows.map((r, idx) => `
+      <tr>
+        <td style="color:var(--text-muted);text-align:center">${r.rank}</td>
+        <td style="direction:rtl;text-align:right">
+          <span class="city-tag">${r.name}</span>
+        </td>
+        <td style="text-align:right">
+          <span style="font-weight:700;color:var(--text)">${r.count.toLocaleString('en-US')}</span>
+          <div style="margin-top:4px;background:var(--surface2);border-radius:3px;height:5px;width:100%;min-width:60px">
+            <div style="height:100%;border-radius:3px;background:var(--blue);width:${((r.count/maxCount)*100).toFixed(1)}%"></div>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="3" style="text-align:center;color:#8b949e;padding:30px">No cities found</td></tr>';
+  }
+
+  function filterCityTable() { renderCityTable(); }
+
+  function sortCityTable(key) {
+    if (citySortKey === key) citySortAsc = !citySortAsc;
+    else { citySortKey = key; citySortAsc = key === 'name'; }
+    renderCityTable();
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────────
   async function init() {
     try {
@@ -787,6 +936,7 @@
     renderRecentTable();
     renderByRegion();
     renderRanking();
+    renderByCity();
     renderCompare();
     renderHeatmap();
   }

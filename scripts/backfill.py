@@ -11,6 +11,7 @@ Environment variables:
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,6 +81,28 @@ def extract_regions(text: str) -> list[str]:
     return [r for r in REGIONS if r in text]
 
 
+def extract_cities(text: str) -> list[str]:
+    """Extract city names from alert text.
+    Cities appear as a comma-separated list on the line after **אזור X** headers.
+    """
+    cities = []
+    lines = text.split("\n")
+    next_is_city_line = False
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"\*\*אזור .+\*\*", stripped):
+            next_is_city_line = True
+            continue
+        if next_is_city_line:
+            if stripped and not stripped.startswith("**") and not stripped.startswith("🚨"):
+                for city in stripped.split(","):
+                    city = city.strip()
+                    if city and len(city) > 1:
+                        cities.append(city)
+            next_is_city_line = False
+    return list(dict.fromkeys(cities))  # deduplicate, preserve order
+
+
 async def backfill() -> None:
     start_date = datetime.strptime(BACKFILL_FROM, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     print(f"Backfilling from {start_date.date()} ...")
@@ -90,6 +113,7 @@ async def backfill() -> None:
         "last_message_id": 0,
         "total_alerts": 0,
         "regions": {r: 0 for r in REGIONS},
+        "cities": {},
         "daily": {},
         "recent": [],
     }
@@ -138,6 +162,7 @@ async def backfill() -> None:
         if not regions:
             continue
 
+        cities = extract_cities(text)
         date_str = msg.date.astimezone(timezone.utc).strftime("%Y-%m-%d")
         data["total_alerts"] += 1
         new_alerts += 1
@@ -149,6 +174,9 @@ async def backfill() -> None:
                 data["daily"][date_str].get(region, 0) + 1
             )
 
+        for city in cities:
+            data["cities"][city] = data["cities"].get(city, 0) + 1
+
         # Insert at front so recent[] is newest-first
         data["recent"].insert(
             0,
@@ -157,6 +185,7 @@ async def backfill() -> None:
                 "date": msg.date.isoformat(),
                 "text": text[:300],
                 "regions": regions,
+                "cities": cities,
             },
         )
 
