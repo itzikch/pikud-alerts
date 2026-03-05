@@ -469,6 +469,7 @@
   <button data-tab="bycity">By City</button>
   <button data-tab="byhour">By Hour</button>
   <button data-tab="shelter">Shelter Time</button>
+  <button data-tab="drone">✈️ Drones</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
 </nav>
@@ -584,14 +585,22 @@
     <div class="stats-grid" id="hourStatsGrid"></div>
 
     <div class="chart-card">
-      <h2>Alerts by Hour of Day</h2>
+      <h2>At What Time Do Alerts Happen? (Hour of Day)</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 12px">
+        Each bar shows the total number of alerts that fired during that hour (00:00–23:00), across all history.
+        The 🔴 red bar is the most dangerous hour.
+      </p>
       <div class="chart-wrap">
         <canvas id="chartByHour"></canvas>
       </div>
     </div>
 
     <div class="chart-card">
-      <h2>Alerts by Day of Week</h2>
+      <h2>On Which Day of the Week Do Alerts Happen?</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 12px">
+        Each bar shows total alerts that occurred on that day of the week across all history.
+        The 🔴 red bar is the most active day.
+      </p>
       <div class="chart-wrap">
         <canvas id="chartByDow"></canvas>
       </div>
@@ -624,6 +633,28 @@
           </thead>
           <tbody id="shelterBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DRONE ===== -->
+  <div id="tab-drone" class="tab-content">
+    <div class="stats-grid" id="droneStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>✈️ Drone Alerts by Region</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 12px">
+        Total drone / hostile UAV intrusion alerts per region since tracking began.
+      </p>
+      <div class="chart-wrap-tall" id="droneRegionChartWrap">
+        <canvas id="chartDroneRegion"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>✈️ Top 20 Cities — Drone Alerts</h2>
+      <div class="chart-wrap-tall" id="droneCityChartWrap">
+        <canvas id="chartDroneCity"></canvas>
       </div>
     </div>
   </div>
@@ -1183,6 +1214,90 @@
     });
   }
 
+  function renderDrone() {
+    const droneTotal   = DATA.drone_alerts   || 0;
+    const droneRegions = DATA.drone_regions  || {};
+    const droneCities  = DATA.drone_cities   || {};
+    const totalAlerts  = DATA.total_alerts   || 0;
+
+    // Stats cards
+    const topRegion = Object.entries(droneRegions).sort((a, b) => b[1] - a[1])[0];
+    const topCity   = Object.entries(droneCities).sort((a, b) => b[1] - a[1])[0];
+    const pct = totalAlerts > 0 ? ((droneTotal / totalAlerts) * 100).toFixed(1) : 0;
+
+    document.getElementById('droneStatsGrid').innerHTML = `
+      <div class="stat-card">
+        <div class="value">${droneTotal.toLocaleString()}</div>
+        <div class="label">✈️ Total Drone Alerts</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${pct}%</div>
+        <div class="label">of All Alerts Are Drones</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${topRegion ? topRegion[0] : '—'}</div>
+        <div class="label">Most Hit Region (Drone)</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${topCity ? topCity[0] : '—'}</div>
+        <div class="label">Most Hit City (Drone)</div>
+      </div>
+    `;
+
+    if (droneTotal === 0) {
+      document.getElementById('droneStatsGrid').innerHTML +=
+        '<p style="color:#8b949e;padding:20px">No drone alert data yet — run the Backfill workflow to populate historical data.</p>';
+      return;
+    }
+
+    // Regions chart
+    const sortedRegions = REGIONS
+      .filter(r => (droneRegions[r] || 0) > 0)
+      .sort((a, b) => (droneRegions[b] || 0) - (droneRegions[a] || 0));
+    const rHeight = Math.max(300, sortedRegions.length * 32);
+    document.getElementById('droneRegionChartWrap').style.height = rHeight + 'px';
+    destroyChart('chartDroneRegion');
+    new Chart(document.getElementById('chartDroneRegion'), {
+      type: 'bar',
+      data: {
+        labels: sortedRegions,
+        datasets: [{ label: 'Drone Alerts', data: sortedRegions.map(r => droneRegions[r] || 0),
+          backgroundColor: '#388bfd', borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+
+    // Cities chart (top 20)
+    const sortedCities = Object.entries(droneCities)
+      .sort((a, b) => b[1] - a[1]).slice(0, 20).reverse();
+    const cHeight = Math.max(300, sortedCities.length * 32);
+    document.getElementById('droneCityChartWrap').style.height = cHeight + 'px';
+    destroyChart('chartDroneCity');
+    new Chart(document.getElementById('chartDroneCity'), {
+      type: 'bar',
+      data: {
+        labels: sortedCities.map(([c]) => c),
+        datasets: [{ label: 'Drone Alerts', data: sortedCities.map(([, v]) => v),
+          backgroundColor: '#388bfd', borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+  }
+
   function renderCompare() {
     const regions = DATA.regions || {};
     const top10 = REGIONS.slice()
@@ -1404,6 +1519,7 @@
     renderByCity();
     renderByHour();
     renderShelter();
+    renderDrone();
     renderCompare();
     renderHeatmap();
   }
