@@ -358,6 +358,76 @@
       margin: 2px 2px 2px 0;
     }
 
+    /* Time range bar */
+    .range-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .range-label {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .range-btns { display: flex; gap: 4px; }
+
+    .range-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 14px;
+      transition: all 0.15s;
+    }
+
+    .range-btn:hover { color: var(--text); border-color: var(--blue); }
+
+    .range-btn.active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    .range-sep {
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 0 4px;
+    }
+
+    .date-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 4px 8px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .date-input:focus { border-color: var(--blue); }
+
+    .range-apply-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 4px 12px;
+      transition: all 0.15s;
+    }
+
+    .range-apply-btn:hover { border-color: var(--blue); color: var(--blue); }
+
     /* Loading / empty states */
     .empty {
       text-align: center;
@@ -397,6 +467,21 @@
   <button data-tab="heatmap">Heat Map</button>
 </nav>
 
+<div class="range-bar">
+  <span class="range-label">Time Range:</span>
+  <div class="range-btns">
+    <button class="range-btn active" data-days="7">7D</button>
+    <button class="range-btn" data-days="14">14D</button>
+    <button class="range-btn" data-days="30">30D</button>
+    <button class="range-btn" data-days="60">60D</button>
+  </div>
+  <span class="range-sep">or custom:</span>
+  <input type="date" id="customFrom" class="date-input" />
+  <span class="range-sep">→</span>
+  <input type="date" id="customTo" class="date-input" />
+  <button class="range-apply-btn" onclick="applyCustomRange()">Apply</button>
+</div>
+
 <main>
 
   <!-- ===== GENERAL ===== -->
@@ -404,7 +489,7 @@
     <div class="stats-grid" id="statsGrid"></div>
 
     <div class="chart-card">
-      <h2>Alerts by Day (Last 30 Days)</h2>
+      <h2 id="titleDaily">Alerts by Day (Last 7 Days)</h2>
       <div class="chart-wrap">
         <canvas id="chartDaily"></canvas>
       </div>
@@ -501,7 +586,7 @@
   <!-- ===== HEATMAP ===== -->
   <div id="tab-heatmap" class="tab-content">
     <div class="chart-card">
-      <h2>Heat Map — Regions × Days (Last 30 Days)</h2>
+      <h2 id="titleHeatmap">Heat Map — Regions × Days (Last 7 Days)</h2>
       <div id="heatmapContainer"></div>
       <div class="heatmap-legend" id="heatmapLegend"></div>
     </div>
@@ -567,16 +652,79 @@
     return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' });
   }
 
-  function getLast30Days() {
+  // ─── Time range state ──────────────────────────────────────────────────────
+  let ACTIVE_DAYS = 7;
+  let CUSTOM_RANGE = null; // { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } or null
+
+  function getActiveDays() {
+    if (CUSTOM_RANGE) {
+      const days = [];
+      const cur = new Date(CUSTOM_RANGE.from + 'T00:00:00');
+      const end = new Date(CUSTOM_RANGE.to   + 'T00:00:00');
+      while (cur <= end) {
+        days.push(cur.toISOString().slice(0, 10));
+        cur.setDate(cur.getDate() + 1);
+      }
+      return days;
+    }
     const days = [];
     const now = new Date();
-    for (let i = 29; i >= 0; i--) {
+    for (let i = ACTIVE_DAYS - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       days.push(d.toISOString().slice(0, 10));
     }
     return days;
   }
+
+  function getRangeLabel() {
+    if (CUSTOM_RANGE) return `${CUSTOM_RANGE.from} → ${CUSTOM_RANGE.to}`;
+    return `Last ${ACTIVE_DAYS} Days`;
+  }
+
+  function applyCustomRange() {
+    const from = document.getElementById('customFrom').value;
+    const to   = document.getElementById('customTo').value;
+    if (!from || !to || from > to) {
+      alert('Please select a valid date range (From ≤ To).');
+      return;
+    }
+    CUSTOM_RANGE = { from, to };
+    ACTIVE_DAYS = 0;
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    reRenderTimedCharts();
+  }
+
+  function reRenderTimedCharts() {
+    const label = getRangeLabel();
+    const el = document.getElementById('titleDaily');
+    if (el) el.textContent = `Alerts by Day (${label})`;
+    const el2 = document.getElementById('titleHeatmap');
+    if (el2) el2.textContent = `Heat Map — Regions × Days (${label})`;
+    if (DATA) {
+      renderDailyChart();
+      renderRegionDailyChart();
+      renderCompare();
+      renderHeatmap();
+    }
+  }
+
+  // Quick range buttons
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ACTIVE_DAYS = parseInt(btn.dataset.days);
+      CUSTOM_RANGE = null;
+      document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Clear custom inputs
+      document.getElementById('customFrom').value = '';
+      document.getElementById('customTo').value = '';
+      reRenderTimedCharts();
+    });
+  });
+
+  // Legacy alias kept for safety
+  function getLast30Days() { return getActiveDays(); }
 
   function heatColor(val, max) {
     if (val === 0) return '#21262d';
@@ -618,7 +766,7 @@
   }
 
   function renderDailyChart() {
-    const days = getLast30Days();
+    const days = getActiveDays();
     const counts = days.map(d => {
       const day = DATA.daily?.[d] || {};
       return Object.values(day).reduce((s, v) => s + v, 0);
@@ -702,7 +850,7 @@
 
   function renderRegionDailyChart() {
     const region = document.getElementById('regionSelect').value;
-    const days = getLast30Days();
+    const days = getActiveDays();
     const counts = days.map(d => (DATA.daily?.[d]?.[region]) || 0);
 
     destroyChart('chartRegionDaily');
@@ -755,7 +903,7 @@
     const top10 = REGIONS.slice()
       .sort((a, b) => (regions[b] || 0) - (regions[a] || 0))
       .slice(0, 10);
-    const days = getLast30Days();
+    const days = getActiveDays();
 
     const colors = [
       '#f85149','#58a6ff','#3fb950','#e3b341','#bc8cff',
@@ -791,7 +939,7 @@
   }
 
   function renderHeatmap() {
-    const days = getLast30Days();
+    const days = getActiveDays();
     const container = document.getElementById('heatmapContainer');
 
     // Compute max for color scaling
