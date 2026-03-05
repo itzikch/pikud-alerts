@@ -467,6 +467,7 @@
   <button data-tab="byregion">By Region</button>
   <button data-tab="ranking">Ranking</button>
   <button data-tab="bycity">By City</button>
+  <button data-tab="byhour">By Hour</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
 </nav>
@@ -573,6 +574,25 @@
           </thead>
           <tbody id="cityTableBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BY HOUR ===== -->
+  <div id="tab-byhour" class="tab-content">
+    <div class="stats-grid" id="hourStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>Alerts by Hour of Day</h2>
+      <div class="chart-wrap">
+        <canvas id="chartByHour"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>Alerts by Day of Week</h2>
+      <div class="chart-wrap">
+        <canvas id="chartByDow"></canvas>
       </div>
     </div>
   </div>
@@ -902,6 +922,107 @@
     `).join('');
   }
 
+  function renderByHour() {
+    const recent = DATA.recent || [];
+    const hourCounts = Array(24).fill(0);
+    const dowCounts  = Array(7).fill(0); // 0=Sun … 6=Sat
+
+    recent.forEach(a => {
+      if (!a.date) return;
+      const d = new Date(a.date);
+      // Hour in Jerusalem timezone
+      const hour = parseInt(d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }).split(':')[0]);
+      if (hour >= 0 && hour < 24) hourCounts[hour]++;
+      // Day-of-week in Jerusalem timezone
+      const dow = new Date(d.toLocaleDateString('en-US', { timeZone: 'Asia/Jerusalem' })).getDay();
+      if (dow >= 0 && dow < 7) dowCounts[dow]++;
+    });
+
+    const maxHour   = Math.max(...hourCounts);
+    const peakHour  = hourCounts.indexOf(maxHour);
+    const periods   = {
+      '🌙 Night (00–06)':     hourCounts.slice(0,  6).reduce((a,b) => a+b, 0),
+      '🌅 Morning (06–12)':   hourCounts.slice(6,  12).reduce((a,b) => a+b, 0),
+      '☀️ Afternoon (12–18)': hourCounts.slice(12, 18).reduce((a,b) => a+b, 0),
+      '🌆 Evening (18–24)':   hourCounts.slice(18, 24).reduce((a,b) => a+b, 0),
+    };
+    const [peakPeriodName, peakPeriodCount] = Object.entries(periods).sort((a,b) => b[1]-a[1])[0];
+
+    // Stats cards
+    document.getElementById('hourStatsGrid').innerHTML = `
+      <div class="stat-card">
+        <div class="value">${String(peakHour).padStart(2,'0')}:00</div>
+        <div class="label">Peak Hour</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${maxHour}</div>
+        <div class="label">Alerts at Peak Hour</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${peakPeriodName.split(' ')[0]}</div>
+        <div class="label">Busiest Period · ${peakPeriodName.split(' ').slice(1).join(' ')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${peakPeriodCount}</div>
+        <div class="label">Alerts in Busiest Period</div>
+      </div>
+    `;
+
+    // Hour bar chart
+    const hourLabels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}:00`);
+    destroyChart('chartByHour');
+    new Chart(document.getElementById('chartByHour'), {
+      type: 'bar',
+      data: {
+        labels: hourLabels,
+        datasets: [{
+          label: 'Alerts',
+          data: hourCounts,
+          backgroundColor: hourCounts.map((_, i) => i === peakHour ? '#f78166' : '#388bfd'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} alerts` } }
+        },
+        scales: {
+          x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Day-of-week bar chart
+    const dowLabels  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const maxDow     = Math.max(...dowCounts);
+    const peakDow    = dowCounts.indexOf(maxDow);
+    destroyChart('chartByDow');
+    new Chart(document.getElementById('chartByDow'), {
+      type: 'bar',
+      data: {
+        labels: dowLabels,
+        datasets: [{
+          label: 'Alerts',
+          data: dowCounts,
+          backgroundColor: dowCounts.map((_, i) => i === peakDow ? '#f78166' : '#388bfd'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} alerts` } }
+        },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
   function renderCompare() {
     const regions = DATA.regions || {};
     const top10 = REGIONS.slice()
@@ -1121,6 +1242,7 @@
     renderByRegion();
     renderRanking();
     renderByCity();
+    renderByHour();
     renderCompare();
     renderHeatmap();
   }
