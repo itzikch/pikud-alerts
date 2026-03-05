@@ -97,19 +97,35 @@ def extract_regions(text: str) -> list[str]:
 async def collect() -> None:
     data = load_data()
     last_id = data.get("last_message_id", 0)
+    print(f"Starting — last_message_id={last_id}")
 
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
+        # Resolve and confirm channel
+        try:
+            entity = await client.get_entity(CHANNEL)
+            print(f"Channel resolved: title='{entity.title}', username=@{entity.username}, id={entity.id}")
+        except Exception as e:
+            print(f"ERROR resolving channel '{CHANNEL}': {e}")
+            return
+
         try:
             messages = []
-            async for msg in client.iter_messages(CHANNEL, min_id=last_id, limit=500):
+            async for msg in client.iter_messages(entity, min_id=last_id, limit=500):
                 messages.append(msg)
         except FloodWaitError as e:
             print(f"FloodWaitError: sleeping {e.seconds}s and exiting")
             await asyncio.sleep(min(e.seconds, 60))
             return
 
+    print(f"Fetched {len(messages)} messages total")
+
+    # Print sample of last 3 messages for debugging
+    for msg in messages[:3]:
+        snippet = (msg.text or "")[:80].replace("\n", " ")
+        print(f"  Sample msg id={msg.id}: {repr(snippet)}")
+
     if not messages:
-        print("No new messages")
+        print("No new messages since last run")
         data["last_updated"] = datetime.now(timezone.utc).isoformat()
         save_data(data)
         return
