@@ -664,7 +664,14 @@
 
   function renderByRegion() {
     const regions = DATA.regions || {};
-    const sorted = REGIONS.slice().sort((a, b) => (regions[b] || 0) - (regions[a] || 0));
+    // Only show regions that have at least 1 alert, sorted descending
+    const sorted = REGIONS.slice()
+      .filter(r => (regions[r] || 0) > 0)
+      .sort((a, b) => (regions[b] || 0) - (regions[a] || 0));
+
+    // Dynamic height: 32px per bar, minimum 300px
+    const chartHeight = Math.max(300, sorted.length * 32);
+    document.getElementById('chartByRegion').parentElement.style.height = chartHeight + 'px';
 
     destroyChart('chartByRegion');
     new Chart(document.getElementById('chartByRegion'), {
@@ -724,6 +731,7 @@
   function renderRanking() {
     const regions = DATA.regions || {};
     const sorted = REGIONS.slice()
+      .filter(r => (regions[r] || 0) > 0)
       .sort((a, b) => (regions[b] || 0) - (regions[a] || 0));
     const max = Math.max(...sorted.map(r => regions[r] || 0), 1);
 
