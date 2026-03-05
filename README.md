@@ -1,112 +1,111 @@
 # 🚨 pikud-alerts
 
-דשבורד אוטומטי של אזעקות פיקוד העורף, מבוסס נתוני הערוץ הרשמי @pikud_haoref בטלגרם.
+Automated dashboard for Israeli Home Front Command (Pikud HaOref) alerts, sourced from the official [@pikud_haoref](https://t.me/pikud_haoref) Telegram channel.
 
-**[פתח את הדשבורד](https://itzikch.github.io/pikud-alerts/)**
-
----
-
-## מה זה?
-
-- אוסף אזעקות מהערוץ `@pikud_haoref` כל 15 דקות דרך GitHub Actions
-- מנתח ומסווג לפי 30 אזורים גיאוגרפיים
-- מציג דשבורד אינטראקטיבי עם גרפים, דירוג, השוואה ומפת חום
-- כל הנתונים נשמרים ב-`docs/data.json` ומוגשים דרך GitHub Pages
+**[Open the Dashboard](https://itzikch.github.io/pikud-alerts/)**
 
 ---
 
-## הגדרה ראשונה
+## What it does
 
-### 1. קבל מפתחות Telegram API
+- Collects alerts from `@pikud_haoref` every 15 minutes via GitHub Actions
+- Parses and categorizes alerts across 30 geographic regions in Israel
+- Displays an interactive dashboard with charts, rankings, comparisons, and a heat map
+- All data is stored in `docs/data.json` and served via GitHub Pages
 
-1. עבור לכתובת [my.telegram.org](https://my.telegram.org)
-2. היכנס עם מספר הטלפון שלך
-3. לחץ **API development tools**
-4. צור אפליקציה חדשה וקבל:
-   - `api_id` ← **TG_API_ID**
-   - `api_hash` ← **TG_API_HASH**
+---
 
-### 2. צור StringSession
+## Setup
 
-התקן את הספריות וצור session:
+### 1. Get Telegram API keys
+
+1. Go to [my.telegram.org](https://my.telegram.org)
+2. Log in with your phone number
+3. Click **API development tools**
+4. Create a new application and note:
+   - `api_id` → **TG_API_ID**
+   - `api_hash` → **TG_API_HASH**
+
+### 2. Generate a StringSession
+
+Install dependencies and run the one-time session generator:
 
 ```bash
 pip install telethon
 python scripts/gen_session.py
 ```
 
-הסקריפט יבקש ממך להזין קוד שיישלח לטלגרם שלך,
-ולבסוף ידפיס מחרוזת ארוכה — זה הערך של **TG_SESSION**.
+The script will prompt for a Telegram verification code and then print a long string — that is your **TG_SESSION** value.
 
-### 3. הוסף Secrets לגיטהאב
+### 3. Add Secrets to GitHub
 
-עבור ל: `Settings → Secrets and variables → Actions → New repository secret`
+Go to: `Settings → Secrets and variables → Actions → New repository secret`
 
-| שם הסוד | ערך |
+| Secret name | Value |
 |---|---|
-| `TG_API_ID` | המספר שקיבלת מ-my.telegram.org |
-| `TG_API_HASH` | ה-hash שקיבלת מ-my.telegram.org |
-| `TG_SESSION` | המחרוזת שהודפסה על ידי gen_session.py |
+| `TG_API_ID` | The numeric ID from my.telegram.org |
+| `TG_API_HASH` | The hash from my.telegram.org |
+| `TG_SESSION` | The string printed by gen_session.py |
 
-### 4. הפעל GitHub Pages
+### 4. Enable GitHub Pages
 
-1. עבור ל: `Settings → Pages`
-2. תחת **Source** בחר: `Deploy from a branch`
-3. בחר branch: `main`, folder: `/docs`
-4. לחץ **Save**
+1. Go to: `Settings → Pages`
+2. Under **Source**, select: `Deploy from a branch`
+3. Choose branch: `main`, folder: `/docs`
+4. Click **Save**
+
+The dashboard will be available at: `https://itzikch.github.io/pikud-alerts/`
 
 ---
 
-## הפעלה ידנית
+## Manual trigger
 
-ניתן להפעיל את האיסוף ידנית:
+To run the collector on demand:
 `Actions → Collect Alerts → Run workflow`
 
 ---
 
-## מבנה הפרויקט
+## Project structure
 
 ```
 pikud-alerts/
 ├── .github/
 │   └── workflows/
-│       └── collect.yml      # GitHub Actions — רץ כל 15 דקות
+│       └── collect.yml      # GitHub Actions — runs every 15 minutes
 ├── scripts/
-│   ├── collect.py           # סקריפט האיסוף הראשי
-│   └── gen_session.py       # יצירת TG_SESSION (חד-פעמי)
+│   ├── collect.py           # Main collector script
+│   └── gen_session.py       # One-time TG_SESSION generator
 ├── docs/
-│   ├── index.html           # הדשבורד
-│   └── data.json            # הנתונים (מתעדכן אוטומטית)
+│   ├── index.html           # The dashboard
+│   └── data.json            # Alert data (auto-updated)
 └── README.md
 ```
 
 ---
 
-## הטאבים בדשבורד
+## Dashboard tabs
 
-| טאב | תיאור |
+| Tab | Description |
 |---|---|
-| **כללי** | סטטיסטיקות מהירות, גרף יומי, אזעקות אחרונות |
-| **לפי אזור** | גרף עמודות לפי כל אזור + מגמה יומית לאזור נבחר |
-| **דירוג** | רשימה ממוינת של האזורים הכי מותקפים |
-| **השוואה** | גרף קווי משוואה של 10 האזורים המובילים |
-| **מפת חום** | grid של אזורים × ימים (30 יום אחרון) |
+| **General** | Quick stats, daily bar chart, recent alerts table |
+| **By Region** | Bar chart of all regions + daily trend for a selected region |
+| **Ranking** | Sorted list of most-hit regions with progress bars |
+| **Compare** | Line chart comparing the top 10 regions over time |
+| **Heat Map** | Grid of regions × days (last 30 days) |
 
 ---
 
-## 30 האזורים
+## Covered regions (30)
 
-אזור שומרון, אזור השפלה, אזור יהודה, אזור לכיש, אזור שרון, אזור ירקון,
-אזור גליל עליון, אזור שפלת יהודה, אזור העמקים, אזור בקעה, אזור קו העימות,
-אזור דן, אזור גולן דרום, אזור גליל תחתון, אזור מרכז הגליל, אזור ים המלח,
-אזור הכרמל, אזור דרום הנגב, אזור ואדי ערה, אזור בקעת בית שאן,
-אזור מערב הנגב, אזור המפרץ, אזור ירושלים, אזור מערב לכיש, אזור מרכז הנגב,
-אזור מנשה, אזור עוטף עזה, אזור גולן צפון, אזור ערבה, אזור אילת
+Shomron, HaShfela, Yehuda, Lachish, Sharon, Yarkon, Upper Galilee, Shfela Yehuda,
+HaAmakim, Bika, Line of Confrontation, Dan, South Golan, Lower Galilee, Central Galilee,
+Dead Sea, Carmel, South Negev, Wadi Ara, Beit Shean Valley, West Negev, The Bay,
+Jerusalem, West Lachish, Central Negev, Menashe, Gaza Envelope, North Golan, Arava, Eilat
 
 ---
 
-## הערות
+## Notes
 
-- הסקריפט מטפל ב-`FloodWaitError` ויצא בשקט אם טלגרם מגביל קצב בקשות
-- `data.json` מצטבר — לא נמחק בין ריצות
-- `[skip ci]` בהודעת ה-commit מונע לולאה של Actions
+- `FloodWaitError` from Telegram is handled gracefully — the script exits silently and retries on the next run
+- `data.json` is cumulative — it is never reset between runs
+- `[skip ci]` in the auto-commit message prevents an Actions loop

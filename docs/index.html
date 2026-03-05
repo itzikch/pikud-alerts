@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>דשבורד אזעקות פיקוד העורף</title>
+  <title>Pikud HaOref Alerts Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -55,8 +55,8 @@
     }
 
     .last-updated {
-      margin-right: auto;
-      text-align: left;
+      margin-left: auto;
+      text-align: right;
       font-size: 12px;
       color: var(--text-muted);
     }
@@ -67,7 +67,7 @@
       border-radius: 50%;
       background: var(--green);
       display: inline-block;
-      margin-left: 6px;
+      margin-right: 6px;
       animation: pulse 2s infinite;
     }
 
@@ -191,7 +191,7 @@
       background: var(--surface2);
       color: var(--text-muted);
       padding: 8px 12px;
-      text-align: right;
+      text-align: left;
       font-weight: 600;
       border-bottom: 1px solid var(--border);
     }
@@ -310,7 +310,7 @@
       margin-top: 12px;
       font-size: 12px;
       color: var(--text-muted);
-      direction: rtl;
+      direction: ltr;
     }
 
     .legend-swatch {
@@ -352,21 +352,21 @@
 <header>
   <span class="logo">🚨</span>
   <div>
-    <h1>דשבורד אזעקות פיקוד העורף</h1>
-    <div class="subtitle">נתונים בזמן אמת מערוץ @pikud_haoref</div>
+    <h1>Pikud HaOref Alerts Dashboard</h1>
+    <div class="subtitle">Real-time data from @pikud_haoref Telegram channel</div>
   </div>
   <div class="last-updated" id="lastUpdated">
     <span class="status-dot"></span>
-    טוען...
+    Loading...
   </div>
 </header>
 
 <nav>
-  <button class="active" data-tab="general">כללי</button>
-  <button data-tab="byregion">לפי אזור</button>
-  <button data-tab="ranking">דירוג</button>
-  <button data-tab="compare">השוואה</button>
-  <button data-tab="heatmap">מפת חום</button>
+  <button class="active" data-tab="general">General</button>
+  <button data-tab="byregion">By Region</button>
+  <button data-tab="ranking">Ranking</button>
+  <button data-tab="compare">Compare</button>
+  <button data-tab="heatmap">Heat Map</button>
 </nav>
 
 <main>
@@ -376,21 +376,21 @@
     <div class="stats-grid" id="statsGrid"></div>
 
     <div class="chart-card">
-      <h2>אזעקות לפי יום (30 ימים אחרונים)</h2>
+      <h2>Alerts by Day (Last 30 Days)</h2>
       <div class="chart-wrap">
         <canvas id="chartDaily"></canvas>
       </div>
     </div>
 
     <div class="chart-card">
-      <h2>אזעקות אחרונות</h2>
+      <h2>Recent Alerts</h2>
       <div style="overflow-x:auto;">
         <table class="alerts-table" id="recentTable">
           <thead>
             <tr>
-              <th>תאריך ושעה</th>
-              <th>אזורים</th>
-              <th>תוכן</th>
+              <th>Date &amp; Time</th>
+              <th>Regions</th>
+              <th>Content</th>
             </tr>
           </thead>
           <tbody id="recentBody"></tbody>
@@ -402,14 +402,14 @@
   <!-- ===== BY REGION ===== -->
   <div id="tab-byregion" class="tab-content">
     <div class="chart-card">
-      <h2>סה"כ אזעקות לפי אזור</h2>
+      <h2>Total Alerts by Region</h2>
       <div class="chart-wrap-tall">
         <canvas id="chartByRegion"></canvas>
       </div>
     </div>
 
     <div class="chart-card">
-      <h2>מגמה יומית לאזור נבחר</h2>
+      <h2>Daily Trend for Selected Region</h2>
       <select class="region-select" id="regionSelect"></select>
       <div class="chart-wrap">
         <canvas id="chartRegionDaily"></canvas>
@@ -420,7 +420,7 @@
   <!-- ===== RANKING ===== -->
   <div id="tab-ranking" class="tab-content">
     <div class="chart-card">
-      <h2>דירוג אזורים לפי מספר אזעקות</h2>
+      <h2>Region Ranking by Alert Count</h2>
       <ul class="rank-list" id="rankList"></ul>
     </div>
   </div>
@@ -428,7 +428,7 @@
   <!-- ===== COMPARE ===== -->
   <div id="tab-compare" class="tab-content">
     <div class="chart-card">
-      <h2>השוואה — 10 אזורים מובילים לאורך זמן</h2>
+      <h2>Comparison — Top 10 Regions Over Time</h2>
       <div class="chart-wrap-tall">
         <canvas id="chartCompare"></canvas>
       </div>
@@ -438,7 +438,7 @@
   <!-- ===== HEATMAP ===== -->
   <div id="tab-heatmap" class="tab-content">
     <div class="chart-card">
-      <h2>מפת חום — אזורים × ימים (30 ימים אחרונים)</h2>
+      <h2>Heat Map — Regions × Days (Last 30 Days)</h2>
       <div id="heatmapContainer"></div>
       <div class="heatmap-legend" id="heatmapLegend"></div>
     </div>
@@ -495,13 +495,13 @@
   function formatDate(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
-    return d.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour12: false });
+    return d.toLocaleString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false });
   }
 
   function formatDateShort(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
-    return d.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' });
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' });
   }
 
   function getLast30Days() {
@@ -540,15 +540,15 @@
       : 0;
 
     const cards = [
-      { value: DATA.total_alerts ?? 0, label: 'סה"כ אזעקות' },
-      { value: todayAlerts, label: 'היום' },
-      { value: REGIONS.filter(r => (regions[r] || 0) > 0).length, label: 'אזורים שנפגעו' },
-      { value: topRegion ? topRegion[1] : 0, label: `המוכה ביותר: ${topRegion ? topRegion[0] : '—'}` },
+      { value: DATA.total_alerts ?? 0, label: 'Total Alerts' },
+      { value: todayAlerts, label: 'Today' },
+      { value: REGIONS.filter(r => (regions[r] || 0) > 0).length, label: 'Regions Affected' },
+      { value: topRegion ? topRegion[1] : 0, label: `Most Hit: ${topRegion ? topRegion[0] : '—'}` },
     ];
 
     document.getElementById('statsGrid').innerHTML = cards.map(c => `
       <div class="stat-card">
-        <div class="value">${c.value.toLocaleString('he-IL')}</div>
+        <div class="value">${c.value.toLocaleString('en-US')}</div>
         <div class="label">${c.label}</div>
       </div>
     `).join('');
@@ -567,7 +567,7 @@
       data: {
         labels: days.map(d => d.slice(5)),
         datasets: [{
-          label: 'אזעקות',
+          label: 'Alerts',
           data: counts,
           backgroundColor: 'rgba(248,81,73,0.7)',
           borderColor: '#f85149',
@@ -587,7 +587,7 @@
     const recent = (DATA.recent || []).slice(0, 30);
     const tbody = document.getElementById('recentBody');
     if (!recent.length) {
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8b949e;padding:30px">אין נתונים עדיין</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8b949e;padding:30px">No data yet</td></tr>';
       return;
     }
     tbody.innerHTML = recent.map(a => `
@@ -609,7 +609,7 @@
       data: {
         labels: sorted,
         datasets: [{
-          label: 'אזעקות',
+          label: 'Alerts',
           data: sorted.map(r => regions[r] || 0),
           backgroundColor: sorted.map((_, i) => `hsla(${i * 12}, 80%, 55%, 0.75)`),
           borderRadius: 3,
@@ -674,7 +674,7 @@
         <div class="rank-bar-wrap">
           <div class="rank-bar" style="width:${pct(r)}%"></div>
         </div>
-        <span class="rank-count">${(regions[r] || 0).toLocaleString('he-IL')}</span>
+        <span class="rank-count">${(regions[r] || 0).toLocaleString('en-US')}</span>
       </li>
     `).join('');
   }
@@ -733,7 +733,7 @@
     });
 
     // Build header row (dates)
-    const labelsHtml = `<div class="heatmap-labels" style="margin-right:130px">
+    const labelsHtml = `<div class="heatmap-labels" style="margin-left:133px">
       ${days.map(d => `<span>${d.slice(5)}</span>`).join('')}
     </div>`;
 
@@ -742,10 +742,10 @@
       const cells = days.map(d => {
         const v = DATA.daily?.[d]?.[r] || 0;
         const color = heatColor(v, maxVal);
-        return `<div class="heatmap-cell" style="background:${color}" title="${r} — ${d}: ${v} אזעקות"></div>`;
+        return `<div class="heatmap-cell" style="background:${color}" title="${r} — ${d}: ${v} alerts"></div>`;
       }).join('');
       return `<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px">
-        <span style="width:125px;font-size:11px;color:#8b949e;text-align:right;flex-shrink:0;padding-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r}</span>
+        <span style="width:125px;font-size:11px;color:#8b949e;text-align:left;flex-shrink:0;padding-right:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r}</span>
         <div style="display:grid;grid-template-columns:repeat(${days.length},1fr);gap:3px;flex:1">${cells}</div>
       </div>`;
     }).join('');
@@ -755,12 +755,12 @@
     // Legend
     const steps = [0, 1, 3, 7, 15];
     document.getElementById('heatmapLegend').innerHTML =
-      '<span>פחות</span>' +
+      '<span>Less</span>' +
       steps.map(v => {
         const color = v === 0 ? '#21262d' : heatColor(v, maxVal);
         return `<div class="legend-swatch" style="background:${color}" title="${v}"></div>`;
       }).join('') +
-      '<span>יותר</span>';
+      '<span>More</span>';
   }
 
   // ─── Init ──────────────────────────────────────────────────────────────────
@@ -777,8 +777,8 @@
     }
 
     const lu = DATA.last_updated
-      ? 'עודכן: ' + formatDate(DATA.last_updated)
-      : 'ממתין לנתונים ראשונים...';
+      ? 'Updated: ' + formatDate(DATA.last_updated)
+      : 'Waiting for first data...';
     document.getElementById('lastUpdated').innerHTML =
       `<span class="status-dot"></span>${lu}`;
 
