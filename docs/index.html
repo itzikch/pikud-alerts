@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>דשבורד אזעקות פיקוד העורף</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --red: #f85149;
+      --orange: #e3b341;
+      --green: #3fb950;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --teal: #39d353;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header .logo { font-size: 28px; }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    header .subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .last-updated {
+      margin-right: auto;
+      text-align: left;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      margin-left: 6px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+
+    nav button {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 12px 16px;
+      font-size: 14px;
+      white-space: nowrap;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    nav button:hover { color: var(--text); }
+
+    nav button.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+    }
+
+    main {
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Stats cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-card .value {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--red);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat-card .label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Chart containers */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .chart-card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 300px;
+    }
+
+    .chart-wrap-tall {
+      position: relative;
+      height: 520px;
+    }
+
+    /* Two column layout */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* Recent alerts table */
+    .alerts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .alerts-table th {
+      background: var(--surface2);
+      color: var(--text-muted);
+      padding: 8px 12px;
+      text-align: right;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .alerts-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .alerts-table tr:hover td { background: var(--surface2); }
+
+    .tag {
+      display: inline-block;
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      margin: 2px 2px 2px 0;
+    }
+
+    /* Ranking list */
+    .rank-list {
+      list-style: none;
+    }
+
+    .rank-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rank-num {
+      width: 28px;
+      text-align: center;
+      font-weight: 700;
+      color: var(--text-muted);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .rank-num.gold { color: #ffd700; }
+    .rank-num.silver { color: #c0c0c0; }
+    .rank-num.bronze { color: #cd7f32; }
+
+    .rank-name { flex: 1; font-size: 14px; }
+
+    .rank-bar-wrap {
+      flex: 2;
+      background: var(--surface2);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    .rank-bar {
+      height: 100%;
+      border-radius: 4px;
+      background: var(--red);
+      transition: width 0.6s ease;
+    }
+
+    .rank-count {
+      width: 50px;
+      text-align: left;
+      font-weight: 700;
+      color: var(--text);
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    /* Heat map */
+    .heatmap-grid {
+      display: grid;
+      gap: 3px;
+      direction: ltr;
+    }
+
+    .heatmap-cell {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: transform 0.1s;
+      position: relative;
+    }
+
+    .heatmap-cell:hover { transform: scale(1.3); z-index: 10; }
+
+    .heatmap-labels {
+      display: flex;
+      gap: 3px;
+      margin-bottom: 4px;
+      direction: ltr;
+      font-size: 11px;
+      color: var(--text-muted);
+      overflow: hidden;
+    }
+
+    .heatmap-labels span {
+      flex: 1;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .heatmap-legend {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      direction: rtl;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+    }
+
+    /* Region selector */
+    .region-select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      width: 260px;
+    }
+
+    /* Loading / empty states */
+    .empty {
+      text-align: center;
+      padding: 60px;
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+
+    .tooltip-custom {
+      background: var(--surface2) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      border-radius: 6px !important;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🚨</span>
+  <div>
+    <h1>דשבורד אזעקות פיקוד העורף</h1>
+    <div class="subtitle">נתונים בזמן אמת מערוץ @pikud_haoref</div>
+  </div>
+  <div class="last-updated" id="lastUpdated">
+    <span class="status-dot"></span>
+    טוען...
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-tab="general">כללי</button>
+  <button data-tab="byregion">לפי אזור</button>
+  <button data-tab="ranking">דירוג</button>
+  <button data-tab="compare">השוואה</button>
+  <button data-tab="heatmap">מפת חום</button>
+</nav>
+
+<main>
+
+  <!-- ===== GENERAL ===== -->
+  <div id="tab-general" class="tab-content active">
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="chart-card">
+      <h2>אזעקות לפי יום (30 ימים אחרונים)</h2>
+      <div class="chart-wrap">
+        <canvas id="chartDaily"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>אזעקות אחרונות</h2>
+      <div style="overflow-x:auto;">
+        <table class="alerts-table" id="recentTable">
+          <thead>
+            <tr>
+              <th>תאריך ושעה</th>
+              <th>אזורים</th>
+              <th>תוכן</th>
+            </tr>
+          </thead>
+          <tbody id="recentBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BY REGION ===== -->
+  <div id="tab-byregion" class="tab-content">
+    <div class="chart-card">
+      <h2>סה"כ אזעקות לפי אזור</h2>
+      <div class="chart-wrap-tall">
+        <canvas id="chartByRegion"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>מגמה יומית לאזור נבחר</h2>
+      <select class="region-select" id="regionSelect"></select>
+      <div class="chart-wrap">
+        <canvas id="chartRegionDaily"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RANKING ===== -->
+  <div id="tab-ranking" class="tab-content">
+    <div class="chart-card">
+      <h2>דירוג אזורים לפי מספר אזעקות</h2>
+      <ul class="rank-list" id="rankList"></ul>
+    </div>
+  </div>
+
+  <!-- ===== COMPARE ===== -->
+  <div id="tab-compare" class="tab-content">
+    <div class="chart-card">
+      <h2>השוואה — 10 אזורים מובילים לאורך זמן</h2>
+      <div class="chart-wrap-tall">
+        <canvas id="chartCompare"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== HEATMAP ===== -->
+  <div id="tab-heatmap" class="tab-content">
+    <div class="chart-card">
+      <h2>מפת חום — אזורים × ימים (30 ימים אחרונים)</h2>
+      <div id="heatmapContainer"></div>
+      <div class="heatmap-legend" id="heatmapLegend"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  // ─── Data ──────────────────────────────────────────────────────────────────
+  let DATA = null;
+
+  const REGIONS = [
+    "אזור שומרון","אזור השפלה","אזור יהודה","אזור לכיש",
+    "אזור שרון","אזור ירקון","אזור גליל עליון","אזור שפלת יהודה",
+    "אזור העמקים","אזור בקעה","אזור קו העימות","אזור דן",
+    "אזור גולן דרום","אזור גליל תחתון","אזור מרכז הגליל","אזור ים המלח",
+    "אזור הכרמל","אזור דרום הנגב","אזור ואדי ערה","אזור בקעת בית שאן",
+    "אזור מערב הנגב","אזור המפרץ","אזור ירושלים","אזור מערב לכיש",
+    "אזור מרכז הנגב","אזור מנשה","אזור עוטף עזה","אזור גולן צפון",
+    "אזור ערבה","אזור אילת"
+  ];
+
+  const CHART_DEFAULTS = {
+    plugins: {
+      legend: { labels: { color: '#8b949e' } },
+      tooltip: {
+        backgroundColor: '#21262d',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        titleColor: '#e6edf3',
+        bodyColor: '#8b949e',
+      }
+    },
+    scales: {
+      x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+      y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+    }
+  };
+
+  Chart.defaults.color = '#8b949e';
+  Chart.defaults.borderColor = '#30363d';
+
+  // ─── Tabs ──────────────────────────────────────────────────────────────────
+  document.querySelectorAll('nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+  function formatDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour12: false });
+  }
+
+  function formatDateShort(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' });
+  }
+
+  function getLast30Days() {
+    const days = [];
+    const now = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      days.push(d.toISOString().slice(0, 10));
+    }
+    return days;
+  }
+
+  function heatColor(val, max) {
+    if (val === 0) return '#21262d';
+    const t = Math.min(val / Math.max(max, 1), 1);
+    const r = Math.round(22 + t * (248 - 22));
+    const g = Math.round(38 + (1 - t) * (99 - 38));
+    const b = Math.round(45 + (1 - t) * (52 - 45));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function destroyChart(id) {
+    const existing = Chart.getChart(id);
+    if (existing) existing.destroy();
+  }
+
+  // ─── Render functions ──────────────────────────────────────────────────────
+  function renderStats() {
+    const regions = DATA.regions || {};
+    const topRegion = Object.entries(regions).sort((a, b) => b[1] - a[1])[0];
+    const days = Object.keys(DATA.daily || {}).sort();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayAlerts = days.includes(todayStr)
+      ? Object.values(DATA.daily[todayStr] || {}).reduce((s, v) => s + v, 0)
+      : 0;
+
+    const cards = [
+      { value: DATA.total_alerts ?? 0, label: 'סה"כ אזעקות' },
+      { value: todayAlerts, label: 'היום' },
+      { value: REGIONS.filter(r => (regions[r] || 0) > 0).length, label: 'אזורים שנפגעו' },
+      { value: topRegion ? topRegion[1] : 0, label: `המוכה ביותר: ${topRegion ? topRegion[0] : '—'}` },
+    ];
+
+    document.getElementById('statsGrid').innerHTML = cards.map(c => `
+      <div class="stat-card">
+        <div class="value">${c.value.toLocaleString('he-IL')}</div>
+        <div class="label">${c.label}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderDailyChart() {
+    const days = getLast30Days();
+    const counts = days.map(d => {
+      const day = DATA.daily?.[d] || {};
+      return Object.values(day).reduce((s, v) => s + v, 0);
+    });
+
+    destroyChart('chartDaily');
+    new Chart(document.getElementById('chartDaily'), {
+      type: 'bar',
+      data: {
+        labels: days.map(d => d.slice(5)),
+        datasets: [{
+          label: 'אזעקות',
+          data: counts,
+          backgroundColor: 'rgba(248,81,73,0.7)',
+          borderColor: '#f85149',
+          borderWidth: 1,
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+  }
+
+  function renderRecentTable() {
+    const recent = (DATA.recent || []).slice(0, 30);
+    const tbody = document.getElementById('recentBody');
+    if (!recent.length) {
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#8b949e;padding:30px">אין נתונים עדיין</td></tr>';
+      return;
+    }
+    tbody.innerHTML = recent.map(a => `
+      <tr>
+        <td style="white-space:nowrap;color:#8b949e">${formatDate(a.date)}</td>
+        <td>${(a.regions || []).map(r => `<span class="tag">${r}</span>`).join('')}</td>
+        <td style="color:#8b949e;max-width:350px;overflow:hidden;text-overflow:ellipsis">${a.text || ''}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderByRegion() {
+    const regions = DATA.regions || {};
+    const sorted = REGIONS.slice().sort((a, b) => (regions[b] || 0) - (regions[a] || 0));
+
+    destroyChart('chartByRegion');
+    new Chart(document.getElementById('chartByRegion'), {
+      type: 'bar',
+      data: {
+        labels: sorted,
+        datasets: [{
+          label: 'אזעקות',
+          data: sorted.map(r => regions[r] || 0),
+          backgroundColor: sorted.map((_, i) => `hsla(${i * 12}, 80%, 55%, 0.75)`),
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+
+    // Populate region select
+    const sel = document.getElementById('regionSelect');
+    sel.innerHTML = REGIONS.map(r => `<option value="${r}">${r}</option>`).join('');
+    sel.addEventListener('change', renderRegionDailyChart);
+    renderRegionDailyChart();
+  }
+
+  function renderRegionDailyChart() {
+    const region = document.getElementById('regionSelect').value;
+    const days = getLast30Days();
+    const counts = days.map(d => (DATA.daily?.[d]?.[region]) || 0);
+
+    destroyChart('chartRegionDaily');
+    new Chart(document.getElementById('chartRegionDaily'), {
+      type: 'line',
+      data: {
+        labels: days.map(d => d.slice(5)),
+        datasets: [{
+          label: region,
+          data: counts,
+          borderColor: '#f85149',
+          backgroundColor: 'rgba(248,81,73,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+        }]
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+  }
+
+  function renderRanking() {
+    const regions = DATA.regions || {};
+    const sorted = REGIONS.slice()
+      .sort((a, b) => (regions[b] || 0) - (regions[a] || 0));
+    const max = Math.max(...sorted.map(r => regions[r] || 0), 1);
+
+    const numClass = i => i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const pct = r => (((regions[r] || 0) / max) * 100).toFixed(1);
+
+    document.getElementById('rankList').innerHTML = sorted.map((r, i) => `
+      <li class="rank-item">
+        <span class="rank-num ${numClass(i)}">${i + 1}</span>
+        <span class="rank-name">${r}</span>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar" style="width:${pct(r)}%"></div>
+        </div>
+        <span class="rank-count">${(regions[r] || 0).toLocaleString('he-IL')}</span>
+      </li>
+    `).join('');
+  }
+
+  function renderCompare() {
+    const regions = DATA.regions || {};
+    const top10 = REGIONS.slice()
+      .sort((a, b) => (regions[b] || 0) - (regions[a] || 0))
+      .slice(0, 10);
+    const days = getLast30Days();
+
+    const colors = [
+      '#f85149','#58a6ff','#3fb950','#e3b341','#bc8cff',
+      '#39d353','#ffa657','#79c0ff','#ff7b72','#d2a8ff'
+    ];
+
+    destroyChart('chartCompare');
+    new Chart(document.getElementById('chartCompare'), {
+      type: 'line',
+      data: {
+        labels: days.map(d => d.slice(5)),
+        datasets: top10.map((r, i) => ({
+          label: r,
+          data: days.map(d => DATA.daily?.[d]?.[r] || 0),
+          borderColor: colors[i],
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 3,
+        }))
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          ...CHART_DEFAULTS.plugins,
+          legend: {
+            labels: { color: '#8b949e', boxWidth: 12 }
+          }
+        }
+      }
+    });
+  }
+
+  function renderHeatmap() {
+    const days = getLast30Days();
+    const container = document.getElementById('heatmapContainer');
+
+    // Compute max for color scaling
+    let maxVal = 1;
+    REGIONS.forEach(r => {
+      days.forEach(d => {
+        const v = DATA.daily?.[d]?.[r] || 0;
+        if (v > maxVal) maxVal = v;
+      });
+    });
+
+    // Build header row (dates)
+    const labelsHtml = `<div class="heatmap-labels" style="margin-right:130px">
+      ${days.map(d => `<span>${d.slice(5)}</span>`).join('')}
+    </div>`;
+
+    // Build rows (one per region)
+    const rowsHtml = REGIONS.map(r => {
+      const cells = days.map(d => {
+        const v = DATA.daily?.[d]?.[r] || 0;
+        const color = heatColor(v, maxVal);
+        return `<div class="heatmap-cell" style="background:${color}" title="${r} — ${d}: ${v} אזעקות"></div>`;
+      }).join('');
+      return `<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px">
+        <span style="width:125px;font-size:11px;color:#8b949e;text-align:right;flex-shrink:0;padding-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r}</span>
+        <div style="display:grid;grid-template-columns:repeat(${days.length},1fr);gap:3px;flex:1">${cells}</div>
+      </div>`;
+    }).join('');
+
+    container.innerHTML = labelsHtml + rowsHtml;
+
+    // Legend
+    const steps = [0, 1, 3, 7, 15];
+    document.getElementById('heatmapLegend').innerHTML =
+      '<span>פחות</span>' +
+      steps.map(v => {
+        const color = v === 0 ? '#21262d' : heatColor(v, maxVal);
+        return `<div class="legend-swatch" style="background:${color}" title="${v}"></div>`;
+      }).join('') +
+      '<span>יותר</span>';
+  }
+
+  // ─── Init ──────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const res = await fetch('./data.json?t=' + Date.now());
+      DATA = await res.json();
+    } catch (e) {
+      DATA = {
+        last_updated: null, total_alerts: 0,
+        regions: Object.fromEntries(REGIONS.map(r => [r, 0])),
+        daily: {}, recent: []
+      };
+    }
+
+    const lu = DATA.last_updated
+      ? 'עודכן: ' + formatDate(DATA.last_updated)
+      : 'ממתין לנתונים ראשונים...';
+    document.getElementById('lastUpdated').innerHTML =
+      `<span class="status-dot"></span>${lu}`;
+
+    renderStats();
+    renderDailyChart();
+    renderRecentTable();
+    renderByRegion();
+    renderRanking();
+    renderCompare();
+    renderHeatmap();
+  }
+
+  init();
+
+  // Auto-refresh every 5 minutes
+  setInterval(init, 5 * 60 * 1000);
+</script>
+</body>
+</html>
