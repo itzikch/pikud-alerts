@@ -17,7 +17,7 @@ API_ID = int(os.environ["TG_API_ID"])
 API_HASH = os.environ["TG_API_HASH"]
 SESSION = os.environ["TG_SESSION"]
 
-CHANNEL = "@pikud_haoref"
+CHANNEL = "@PikudHaOref_all"
 DATA_FILE = Path(__file__).parent.parent / "docs" / "data.json"
 
 REGIONS = [
