@@ -19,7 +19,41 @@
       --blue: #58a6ff;
       --purple: #bc8cff;
       --teal: #39d353;
+      --chart-grid: #21262d;
+      --chart-tick: #8b949e;
     }
+    body.light-mode {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface2: #eaeef2;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-muted: #57606a;
+      --chart-grid: #d0d7de;
+      --chart-tick: #57606a;
+    }
+    body { transition: background 0.25s, color 0.25s; }
+    .chart-card, nav, header, .range-bar { transition: background 0.25s, border-color 0.25s; }
+
+    /* Zone status badges */
+    .zone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 10px; margin-bottom: 20px; }
+    .zone-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    .zone-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .zone-dot.hot  { background: #f85149; box-shadow: 0 0 6px #f85149aa; }
+    .zone-dot.warm { background: #e3b341; }
+    .zone-dot.quiet { background: #3fb950; }
+    .zone-name { font-size: 12px; font-weight: 600; color: var(--text); }
+    .zone-days { font-size: 11px; color: var(--text-muted); }
+
+    /* Weekly trend */
+    .trend-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
+    .trend-badge.worse  { background: #f8516920; color: #f85149; }
+    .trend-badge.better { background: #3fb95020; color: #3fb950; }
+    .trend-badge.stable { background: #58a6ff20; color: #58a6ff; }
+
+    /* Theme toggle */
+    .theme-toggle { margin-left: auto; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 20px; padding: 6px 14px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s; }
+    .theme-toggle:hover { background: var(--border); }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -460,6 +494,7 @@
     <span class="status-dot"></span>
     Loading...
   </div>
+  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">☀️ Light</button>
 </header>
 
 <nav>
@@ -470,6 +505,7 @@
   <button data-tab="byhour">By Hour</button>
   <button data-tab="shelter">Shelter Time</button>
   <button data-tab="drone">✈️ Drones</button>
+  <button data-tab="trends">📈 Trends</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
 </nav>
@@ -500,6 +536,16 @@
       <div class="chart-wrap">
         <canvas id="chartDaily"></canvas>
       </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>🗺️ Zone Status — Hot / Warm / Quiet</h2>
+      <p style="color:var(--text-muted);font-size:12px;margin:-4px 0 12px">
+        🔴 <b>Hot</b> — alert in last 24h &nbsp;|&nbsp;
+        🟡 <b>Warm</b> — alert in last 7 days &nbsp;|&nbsp;
+        🟢 <b>Quiet</b> — no alert for 7+ days
+      </p>
+      <div class="zone-grid" id="zoneGrid"></div>
     </div>
 
     <div class="chart-card">
@@ -659,6 +705,43 @@
     </div>
   </div>
 
+  <!-- ===== TRENDS ===== -->
+  <div id="tab-trends" class="tab-content">
+    <div class="stats-grid" id="trendsStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>📈 Weekly Alert Count — Is the Situation Getting Better or Worse?</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 14px">
+        Each bar = total alerts for that week (Mon–Sun).
+        🔴 Red = worse than previous week · 🟢 Green = improved · 🔵 Blue = first week / no comparison.
+      </p>
+      <div id="trendSummary" style="margin-bottom:14px"></div>
+      <div class="chart-wrap">
+        <canvas id="chartWeekly"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>⏱️ Average Days Between Alerts — by Region</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 12px">
+        A lower number means alerts are happening more frequently in that region.
+      </p>
+      <div style="overflow-x:auto;">
+        <table class="alerts-table" id="avgIntervalTable">
+          <thead>
+            <tr>
+              <th>Region</th>
+              <th>Total Alerts</th>
+              <th>Avg Days Between Alerts</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="avgIntervalBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== COMPARE ===== -->
   <div id="tab-compare" class="tab-content">
     <div class="chart-card">
@@ -739,7 +822,7 @@
   }
 
   // ─── Time range state ──────────────────────────────────────────────────────
-  let ACTIVE_DAYS = 7;
+  let ACTIVE_DAYS = parseInt(localStorage.getItem('pikud-range') || '7');
   let CUSTOM_RANGE = null; // { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } or null
 
   function getActiveDays() {
@@ -800,6 +883,7 @@
     btn.addEventListener('click', () => {
       ACTIVE_DAYS = parseInt(btn.dataset.days);
       CUSTOM_RANGE = null;
+      localStorage.setItem('pikud-range', ACTIVE_DAYS);
       document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       // Clear custom inputs
@@ -1214,6 +1298,172 @@
     });
   }
 
+  // ─── Theme toggle ────────────────────────────────────────────────────────────
+  function toggleTheme() {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('pikud-theme', isLight ? 'light' : 'dark');
+    document.getElementById('themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
+    // Re-render charts so axis/grid colors update
+    renderDailyChart(); renderByRegion(); renderRanking(); renderByCity();
+    renderByHour(); renderShelter(); renderDrone(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
+  }
+
+  // ─── Zone Status ─────────────────────────────────────────────────────────────
+  function renderZoneStatus() {
+    const daily = DATA.daily || {};
+    const today = new Date();
+
+    const grid = document.getElementById('zoneGrid');
+    if (!grid) return;
+
+    const rows = REGIONS.map(region => {
+      let lastDate = null;
+      for (const [date, regions] of Object.entries(daily)) {
+        if ((regions[region] || 0) > 0 && (!lastDate || date > lastDate)) lastDate = date;
+      }
+      if (!lastDate) return { region, status: 'quiet', label: 'Never alerted', days: 9999 };
+      const diff = Math.floor((today - new Date(lastDate + 'T00:00:00')) / 86400000);
+      const status = diff <= 1 ? 'hot' : diff <= 7 ? 'warm' : 'quiet';
+      const label  = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+      return { region, status, label, days: diff };
+    }).filter(r => r.days < 9999).sort((a, b) => a.days - b.days);
+
+    grid.innerHTML = rows.map(r => `
+      <div class="zone-card">
+        <div class="zone-dot ${r.status}"></div>
+        <div>
+          <div class="zone-name">${r.region.replace('אזור ', '')}</div>
+          <div class="zone-days">${r.label}</div>
+        </div>
+      </div>
+    `).join('') || '<p style="color:var(--text-muted)">No data yet</p>';
+  }
+
+  // ─── Weekly Trend ────────────────────────────────────────────────────────────
+  function renderWeeklyTrend() {
+    const daily = DATA.daily || {};
+
+    // Group by week (week starts Monday)
+    const weekMap = {};
+    for (const [date, regions] of Object.entries(daily)) {
+      const d = new Date(date + 'T00:00:00');
+      const dow = d.getDay(); // 0=Sun
+      const offset = dow === 0 ? -6 : 1 - dow;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + offset);
+      const key = monday.toISOString().slice(0, 10);
+      const total = Object.values(regions).reduce((s, v) => s + v, 0);
+      weekMap[key] = (weekMap[key] || 0) + total;
+    }
+
+    const weeks  = Object.keys(weekMap).sort();
+    const counts = weeks.map(w => weekMap[w]);
+
+    // Stats: trend vs previous week
+    const last = counts[counts.length - 1] ?? 0;
+    const prev = counts[counts.length - 2] ?? null;
+    const pctChange = prev !== null && prev > 0
+      ? Math.round((last - prev) / prev * 100) : null;
+    const isWorse  = pctChange !== null && pctChange > 0;
+    const isBetter = pctChange !== null && pctChange < 0;
+
+    // Stats cards
+    const totalWeeks = weeks.length;
+    const peakWeek = weeks[counts.indexOf(Math.max(...counts))];
+    const peakLabel = peakWeek ? `Week of ${peakWeek}` : '—';
+    document.getElementById('trendsStatsGrid').innerHTML = `
+      <div class="stat-card"><div class="value">${last}</div><div class="label">This Week's Alerts</div></div>
+      <div class="stat-card"><div class="value">${prev ?? '—'}</div><div class="label">Last Week's Alerts</div></div>
+      <div class="stat-card"><div class="value">${pctChange !== null ? (pctChange > 0 ? '+' : '') + pctChange + '%' : '—'}</div><div class="label">Week-over-Week Change</div></div>
+      <div class="stat-card"><div class="value">${peakLabel}</div><div class="label">Worst Week</div></div>
+    `;
+
+    // Trend badge
+    let badge = '';
+    if (pctChange !== null) {
+      if (isWorse)  badge = `<span class="trend-badge worse">↑ ${pctChange}% worse than last week</span>`;
+      else if (isBetter) badge = `<span class="trend-badge better">↓ ${Math.abs(pctChange)}% better than last week</span>`;
+      else badge = `<span class="trend-badge stable">→ Stable vs last week</span>`;
+    }
+    const trendEl = document.getElementById('trendSummary');
+    if (trendEl) trendEl.innerHTML = badge;
+
+    if (weeks.length < 2) {
+      const el = document.getElementById('trendSummary');
+      if (el) el.innerHTML += '<p style="color:var(--text-muted);font-size:13px;margin-top:8px">Not enough data yet — need at least 2 weeks of alerts.</p>';
+    }
+
+    // Bar chart — color each bar by comparison to previous
+    const colors = counts.map((c, i) => {
+      if (i === 0) return '#388bfd';
+      return c > counts[i - 1] ? '#f85149' : c < counts[i - 1] ? '#3fb950' : '#388bfd';
+    });
+
+    const labels = weeks.map(w => {
+      const d = new Date(w + 'T00:00:00');
+      return `${d.getDate()}/${d.getMonth() + 1}`;
+    });
+
+    destroyChart('chartWeekly');
+    new Chart(document.getElementById('chartWeekly'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Alerts', data: counts, backgroundColor: colors, borderRadius: 4 }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            title: (items) => `Week of ${weeks[items[0].dataIndex]}`,
+            label: (ctx) => ` ${ctx.parsed.y} alerts`
+          }}
+        },
+        scales: {
+          x: { ticks: { color: 'var(--chart-tick)' }, grid: { color: 'var(--chart-grid)' } },
+          y: { ticks: { color: 'var(--chart-tick)' }, grid: { color: 'var(--chart-grid)' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Avg interval table
+    renderAvgInterval();
+  }
+
+  function renderAvgInterval() {
+    const daily = DATA.daily || {};
+    const rows = REGIONS
+      .map(region => {
+        const alertDates = Object.entries(daily)
+          .filter(([, r]) => (r[region] || 0) > 0)
+          .map(([d]) => d).sort();
+        if (alertDates.length < 2) return { region, total: alertDates.length, avg: null };
+        let totalDays = 0;
+        for (let i = 1; i < alertDates.length; i++) {
+          const diff = (new Date(alertDates[i]) - new Date(alertDates[i - 1])) / 86400000;
+          totalDays += diff;
+        }
+        return { region, total: alertDates.length, avg: totalDays / (alertDates.length - 1) };
+      })
+      .filter(r => r.total > 0)
+      .sort((a, b) => (a.avg ?? 999) - (b.avg ?? 999));
+
+    document.getElementById('avgIntervalBody').innerHTML = rows.map(r => {
+      const avgStr = r.avg !== null ? r.avg.toFixed(1) + ' days' : '—';
+      const status = r.avg === null ? '—'
+        : r.avg < 1 ? '<span style="color:#f85149">🔴 Daily</span>'
+        : r.avg < 3 ? '<span style="color:#e3b341">🟡 Frequent</span>'
+        : '<span style="color:#3fb950">🟢 Occasional</span>';
+      return `<tr>
+        <td>${r.region}</td>
+        <td>${r.total}</td>
+        <td style="font-weight:600">${avgStr}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('');
+  }
+
   function renderDrone() {
     const droneTotal   = DATA.drone_alerts   || 0;
     const droneRegions = DATA.drone_regions  || {};
@@ -1511,7 +1761,24 @@
     updateFreshness();
     setInterval(updateFreshness, 30000);
 
+    // Restore saved time range button highlight
+    const savedRange = localStorage.getItem('pikud-range');
+    if (savedRange) {
+      document.querySelectorAll('.range-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.days === savedRange);
+      });
+    }
+
+    // Restore saved theme
+    const savedTheme = localStorage.getItem('pikud-theme');
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-mode');
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = '🌙 Dark';
+    }
+
     renderStats();
+    renderZoneStatus();
     renderDailyChart();
     renderRecentTable();
     renderByRegion();
@@ -1520,6 +1787,7 @@
     renderByHour();
     renderShelter();
     renderDrone();
+    renderWeeklyTrend();
     renderCompare();
     renderHeatmap();
   }
