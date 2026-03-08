@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pikud HaOref Alerts Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Leaflet for real Israel map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     :root {
       --bg: #0d1117;
@@ -481,6 +484,24 @@
       border-radius: 6px !important;
     }
 
+    /* Leaflet tooltip dark theme */
+    .leaflet-tip {
+      background: #161b22 !important;
+      border: 1px solid #30363d !important;
+      color: #e6edf3 !important;
+      border-radius: 6px !important;
+      font-size: 13px !important;
+      padding: 6px 10px !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,.5) !important;
+    }
+    .leaflet-tip::before { display: none !important; }
+    /* Leaflet attribution dark */
+    .leaflet-control-attribution {
+      background: rgba(13,17,23,.8) !important;
+      color: #8b949e !important;
+    }
+    .leaflet-control-attribution a { color: #58a6ff !important; }
+
     /* ── Live banner ── */
     .live-banner {
       display: none;
@@ -892,17 +913,22 @@
   <!-- ===== MAP ===== -->
   <div id="tab-map" class="tab-content">
     <div class="chart-card">
-      <h2>🗺️ Alert Intensity Map — Schematic View</h2>
-      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 16px">
-        Regions positioned roughly geographically (North → South, West → East).
-        Color intensity = total alert count. Click any region to drill down.
+      <h2>🗺️ Israel Alert Intensity Map</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 14px">
+        Each circle = one Home Front Command region. Size &amp; colour = alert intensity.
+        🟢 Quiet &nbsp;🟡 Moderate &nbsp;🔴 High &nbsp; — click any circle to drill down.
       </p>
-      <div class="stats-grid" id="mapStatsGrid"></div>
-      <div class="map-grid" id="regionMapGrid" style="margin-top:20px"></div>
-      <div class="map-legend">
+      <div class="stats-grid" id="mapStatsGrid" style="margin-bottom:16px"></div>
+    </div>
+    <!-- Map fills its own full-width card so Leaflet gets proper dimensions -->
+    <div class="chart-card" style="padding:0;overflow:hidden;border-radius:10px">
+      <div id="israelMap" style="height:620px;width:100%;border-radius:10px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="map-legend" style="justify-content:center">
         <span class="map-legend-label">0 alerts</span>
-        <div class="map-legend-bar"></div>
-        <span class="map-legend-label">Max alerts</span>
+        <div class="map-legend-bar" style="width:220px"></div>
+        <span class="map-legend-label">Highest</span>
       </div>
     </div>
   </div>
@@ -936,7 +962,7 @@
     "אזור ערבה","אזור אילת"
   ];
 
-  // ─── Schematic map layout (row 1–11, col 1–4, N→S / W→E) ───────────────────
+  // ─── Schematic map fallback layout (kept for reference) ─────────────────────
   const REGION_MAP = [
     { region: "אזור קו העימות",    row: 1, col: 2, label: "Confront. Line" },
     { region: "אזור גולן צפון",    row: 1, col: 4, label: "N. Golan" },
@@ -969,6 +995,41 @@
     { region: "אזור ערבה",         row: 10, col: 4, label: "Arava" },
     { region: "אזור אילת",         row: 11, col: 3, label: "Eilat" },
   ];
+
+  // ─── Real geographic centres for Leaflet map ─────────────────────────────────
+  // Approximate centroids of each Home Front Command warning zone
+  const REGION_CENTERS = {
+    "אזור קו העימות":    { lat: 33.08, lon: 35.22, label: "Confront. Line" },
+    "אזור גולן צפון":    { lat: 33.12, lon: 35.72, label: "N. Golan" },
+    "אזור גליל עליון":   { lat: 33.00, lon: 35.30, label: "Upper Galilee" },
+    "אזור מרכז הגליל":  { lat: 32.90, lon: 35.30, label: "Central Galilee" },
+    "אזור גולן דרום":    { lat: 32.80, lon: 35.75, label: "S. Golan" },
+    "אזור המפרץ":        { lat: 32.82, lon: 34.98, label: "Bay (Haifa)" },
+    "אזור הכרמל":        { lat: 32.73, lon: 35.00, label: "Carmel" },
+    "אזור גליל תחתון":   { lat: 32.70, lon: 35.35, label: "Lower Galilee" },
+    "אזור בקעת בית שאן": { lat: 32.48, lon: 35.50, label: "Beit Shean" },
+    "אזור ואדי ערה":     { lat: 32.50, lon: 35.08, label: "Wadi Ara" },
+    "אזור מנשה":         { lat: 32.45, lon: 35.00, label: "Menashe" },
+    "אזור העמקים":       { lat: 32.65, lon: 35.28, label: "Valleys" },
+    "אזור שרון":         { lat: 32.28, lon: 34.90, label: "Sharon" },
+    "אזור ירקון":        { lat: 32.11, lon: 34.93, label: "Yarkon" },
+    "אזור דן":           { lat: 32.01, lon: 34.78, label: "Dan (Tel Aviv)" },
+    "אזור שומרון":       { lat: 32.22, lon: 35.18, label: "Samaria" },
+    "אזור בקעה":         { lat: 32.05, lon: 35.50, label: "Jordan Valley" },
+    "אזור ירושלים":      { lat: 31.78, lon: 35.22, label: "Jerusalem" },
+    "אזור השפלה":        { lat: 31.90, lon: 34.92, label: "Shephelah" },
+    "אזור שפלת יהודה":   { lat: 31.70, lon: 34.90, label: "Judean Lowlands" },
+    "אזור יהודה":        { lat: 31.55, lon: 35.12, label: "Judea" },
+    "אזור ים המלח":      { lat: 31.50, lon: 35.42, label: "Dead Sea" },
+    "אזור לכיש":         { lat: 31.60, lon: 34.82, label: "Lachish" },
+    "אזור מערב לכיש":    { lat: 31.52, lon: 34.68, label: "W. Lachish" },
+    "אזור עוטף עזה":     { lat: 31.32, lon: 34.48, label: "Gaza Envelope" },
+    "אזור מערב הנגב":    { lat: 31.18, lon: 34.62, label: "W. Negev" },
+    "אזור מרכז הנגב":    { lat: 31.02, lon: 34.82, label: "Central Negev" },
+    "אזור דרום הנגב":    { lat: 30.50, lon: 34.90, label: "S. Negev" },
+    "אזור ערבה":         { lat: 30.22, lon: 35.02, label: "Arava" },
+    "אזור אילת":         { lat: 29.56, lon: 34.95, label: "Eilat" },
+  };
 
   const CHART_DEFAULTS = {
     plugins: {
@@ -1015,6 +1076,10 @@
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       setHashParam('tab', btn.dataset.tab);
+      // Leaflet needs a size recalculation after the container becomes visible
+      if (btn.dataset.tab === 'map' && leafletMap) {
+        setTimeout(() => leafletMap.invalidateSize(), 50);
+      }
     });
   });
 
@@ -2031,42 +2096,94 @@
     document.getElementById('drillModal').style.display = 'none';
   }
 
-  // ─── Schematic map (Feature 7) ───────────────────────────────────────────
+  // ─── Real Leaflet map (Feature 7) ───────────────────────────────────────
+  let leafletMap     = null;
+  let leafletCircles = {};   // region → L.circle
+
+  function leafletCircleColor(val, max) {
+    if (val === 0) return { fill: '#3fb950', border: '#2ea043' };
+    const t = Math.min(val / Math.max(max, 1), 1);
+    if (t < 0.25) return { fill: '#56d364', border: '#3fb950' };
+    if (t < 0.50) return { fill: '#e3b341', border: '#bb8009' };
+    if (t < 0.75) return { fill: '#f0883e', border: '#bd561d' };
+    return { fill: '#f85149', border: '#da3633' };
+  }
+
+  function initLeafletMap() {
+    if (leafletMap) return;
+    leafletMap = L.map('israelMap', {
+      center: [31.4, 35.0],
+      zoom: 7,
+      minZoom: 6,
+      maxZoom: 13,
+      zoomControl: true,
+    });
+
+    // OpenStreetMap tiles (dark-ish via CartoDB dark_matter for dashboard feel)
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '© <a href="https://carto.com/">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        subdomains: 'abcd',
+        maxZoom: 19,
+      }
+    ).addTo(leafletMap);
+  }
+
   function renderMap() {
-    const regions  = DATA.regions || {};
-    const allVals  = REGIONS.map(r => regions[r] || 0);
-    const maxVal   = Math.max(...allVals, 1);
+    const regions = DATA.regions || {};
+    const allVals = Object.values(REGION_CENTERS).map(c =>
+      regions[Object.keys(REGION_CENTERS).find(k => REGION_CENTERS[k] === c)] || 0
+    );
+    const maxVal  = Math.max(...REGIONS.map(r => regions[r] || 0), 1);
 
-    // Build 11×4 grid array
-    const ROWS = 11, COLS = 4;
-    const cells = Array(ROWS * COLS).fill(null);
-    for (const item of REGION_MAP) {
-      cells[(item.row - 1) * COLS + (item.col - 1)] = item;
-    }
-
-    const mapStatsGrid = document.getElementById('mapStatsGrid');
-    const topRegion = Object.entries(regions).sort((a, b) => b[1] - a[1])[0];
+    // Stat cards
+    const topRegion  = Object.entries(regions).sort((a, b) => b[1] - a[1])[0];
     const quietCount = REGIONS.filter(r => !regions[r] || regions[r] === 0).length;
-    if (mapStatsGrid) {
-      mapStatsGrid.innerHTML = [
+    const msGrid = document.getElementById('mapStatsGrid');
+    if (msGrid) {
+      msGrid.innerHTML = [
         { value: Object.values(regions).filter(v => v > 0).length, label: 'Active Regions' },
-        { value: topRegion ? topRegion[1] : 0, label: `Most Alerts: ${topRegion ? topRegion[0].replace('אזור ', '') : '—'}` },
-        { value: quietCount, label: 'Never Alerted Regions' },
+        { value: topRegion ? topRegion[1] : 0,
+          label: `Most Alerts: ${topRegion ? topRegion[0].replace('אזור ', '') : '—'}` },
+        { value: quietCount, label: 'Regions Never Hit' },
       ].map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`).join('');
     }
 
-    document.getElementById('regionMapGrid').innerHTML = cells.map(item => {
-      if (!item) return '<div class="map-cell empty-cell"></div>';
-      const count = regions[item.region] || 0;
-      const bg    = heatColor(count, maxVal);
-      return `
-        <div class="map-cell" style="background:${bg}"
-             onclick="openDrillDown('${item.region.replace(/'/g, "\\'")}')"
-             title="${item.region}: ${count} alerts">
-          <div class="cell-count">${count}</div>
-          <div class="cell-name">${item.label}</div>
-        </div>`;
-    }).join('');
+    // Build Leaflet map
+    initLeafletMap();
+
+    // Remove old circles
+    Object.values(leafletCircles).forEach(c => c.remove());
+    leafletCircles = {};
+
+    for (const [region, coords] of Object.entries(REGION_CENTERS)) {
+      const count  = regions[region] || 0;
+      const colors = leafletCircleColor(count, maxVal);
+      // Radius in meters: 7 km base + up to 28 km scaled by intensity
+      const radius = 7000 + (count / maxVal) * 28000;
+
+      const circle = L.circle([coords.lat, coords.lon], {
+        radius,
+        color:       colors.border,
+        fillColor:   colors.fill,
+        fillOpacity: count === 0 ? 0.25 : 0.65,
+        weight:      count === 0 ? 1 : 2,
+      }).addTo(leafletMap);
+
+      // Tooltip (hover label)
+      circle.bindTooltip(
+        `<b style="direction:rtl">${region}</b><br>${count} alert${count !== 1 ? 's' : ''}`,
+        { sticky: true, className: 'leaflet-tip' }
+      );
+
+      // Click → drill-down modal
+      circle.on('click', () => openDrillDown(region));
+      leafletCircles[region] = circle;
+    }
+
+    // Force Leaflet to recalculate size (needed when tab was hidden at init)
+    setTimeout(() => leafletMap && leafletMap.invalidateSize(), 100);
   }
 
   // ─── Alert Duration stats (Feature 1) ───────────────────────────────────
