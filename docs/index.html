@@ -771,6 +771,20 @@
       </div>
     </div>
 
+    <!-- Probability chart — last 7 days -->
+    <div class="chart-card">
+      <h2>🎲 Alert Probability by Hour — Last 7 Days</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 12px">
+        For each hour of the day, the bar shows the percentage of the <b>last 7 days</b> that had
+        at least one alert during that hour (Israel time). 100% = alert fired every single day at that hour.
+      </p>
+      <div class="stats-grid" id="probStatsGrid" style="margin-bottom:14px"></div>
+      <div class="chart-wrap">
+        <canvas id="chartHourProb"></canvas>
+      </div>
+      <p id="probFooter" style="color:#8b949e;font-size:12px;margin-top:10px;text-align:center"></p>
+    </div>
+
     <div class="chart-card">
       <h2>🌙 Night vs. Day Breakdown</h2>
       <p style="color:#8b949e;font-size:13px;margin:-8px 0 16px">
@@ -1789,6 +1803,87 @@
       <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#e3b341"></div>☀️ Day: ${dayCount} (${dayPct}%)</div>
       <div style="margin-top:8px;color:var(--text-muted);font-size:11px">${hasAllTime ? 'All-time data (Israel time)' : 'Based on recent 100 alerts'}</div>
     `;
+
+    // ── Alert Probability by Hour (last 7 days) ─────────────────────────────
+    const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const last7 = recent.filter(a => a.date && new Date(a.date).getTime() > sevenDaysAgo && a.type !== 'flash');
+
+    // For each hour, collect the set of unique days (Israel time) that had ≥1 alert
+    const hourDaySets = Array.from({ length: 24 }, () => new Set());
+    last7.forEach(a => {
+      const d    = new Date(a.date);
+      const hour = parseInt(d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }).split(':')[0]);
+      const day  = d.toLocaleDateString('en-US', { timeZone: 'Asia/Jerusalem' }); // unique day string
+      if (hour >= 0 && hour < 24) hourDaySets[hour].add(day);
+    });
+
+    // Probability = fraction of 7 days that had ≥1 alert in that hour
+    const hourProb      = hourDaySets.map(s => Math.round((s.size / 7) * 100));
+    const maxProb       = Math.max(...hourProb, 1);
+    const peakProbHour  = hourProb.indexOf(maxProb);
+    const activeHours   = hourProb.filter(p => p > 0).length;
+    const avg7Alerts    = last7.length;
+
+    // Probability stat cards
+    const probGrid = document.getElementById('probStatsGrid');
+    if (probGrid) {
+      probGrid.innerHTML = [
+        { value: maxProb + '%',                 label: `Highest probability · ${String(peakProbHour).padStart(2,'0')}:00` },
+        { value: activeHours,                   label: 'Hours with any alerts (last 7d)'                                  },
+        { value: avg7Alerts,                    label: 'Total alerts in last 7 days'                                       },
+        { value: Math.round(avg7Alerts / 7),    label: 'Avg alerts per day (last 7d)'                                     },
+      ].map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`).join('');
+    }
+
+    // Probability bar chart
+    const gradientColors = hourProb.map((p, i) => {
+      if (i === peakProbHour) return '#f85149';   // red for peak
+      if (p >= 70) return '#e3b341';              // yellow for high
+      if (p >= 40) return '#388bfd';              // blue for moderate
+      return '#30363d';                           // dim for low/zero
+    });
+
+    destroyChart('chartHourProb');
+    new Chart(document.getElementById('chartHourProb'), {
+      type: 'bar',
+      data: {
+        labels: Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2,'0')}:00`),
+        datasets: [{
+          label: 'Probability',
+          data:  hourProb,
+          backgroundColor: gradientColors,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.parsed.y}% chance (${hourDaySets[ctx.dataIndex].size}/7 days)`,
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: '#21262d' } },
+          y: {
+            ticks: { color: '#8b949e', callback: v => v + '%' },
+            grid:  { color: '#21262d' },
+            beginAtZero: true, max: 100,
+          },
+        },
+      },
+    });
+
+    // Footer note
+    const pf = document.getElementById('probFooter');
+    if (pf) {
+      const dateRange = last7.length > 0
+        ? `${new Date(last7[last7.length - 1].date).toLocaleDateString('en-GB', { timeZone: 'Asia/Jerusalem' })}–${new Date(last7[0].date).toLocaleDateString('en-GB', { timeZone: 'Asia/Jerusalem' })}`
+        : 'no alerts in last 7 days';
+      pf.textContent = `Based on ${last7.length} alerts across the last 7 days (${dateRange}, Israel time). Probability = days with ≥1 alert at that hour ÷ 7.`;
+    }
   }
 
   // ─── Theme toggle ────────────────────────────────────────────────────────────
