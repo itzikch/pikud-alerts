@@ -505,6 +505,7 @@
   <button data-tab="byhour">By Hour</button>
   <button data-tab="shelter">Shelter Time</button>
   <button data-tab="drone">✈️ Drones</button>
+  <button data-tab="flash">⚡ Flash</button>
   <button data-tab="trends">📈 Trends</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
@@ -701,6 +702,30 @@
       <h2>✈️ Top 20 Cities — Drone Alerts</h2>
       <div class="chart-wrap-tall" id="droneCityChartWrap">
         <canvas id="chartDroneCity"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FLASH WARNINGS ===== -->
+  <div id="tab-flash" class="tab-content">
+    <div class="stats-grid" id="flashStatsGrid"></div>
+
+    <div class="chart-card">
+      <h2>⚡ Flash Warnings by Region</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 12px">
+        A <b>Flash Warning (מבזק)</b> is a pre-alert broadcast by the Home Front Command warning
+        that rocket or drone alerts are expected soon in listed areas. These are separate from
+        confirmed alert activations.
+      </p>
+      <div class="chart-wrap-tall" id="flashRegionChartWrap">
+        <canvas id="chartFlashRegion"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>⚡ Top 20 Cities — Flash Warnings</h2>
+      <div class="chart-wrap-tall" id="flashCityChartWrap">
+        <canvas id="chartFlashCity"></canvas>
       </div>
     </div>
   </div>
@@ -927,6 +952,7 @@
       { value: topRegion ? topRegion[1] : 0, label: `Most Hit: ${topRegion ? topRegion[0] : '—'}` },
       { value: DATA.drone_alerts ?? 0, label: '✈️ Drone Alerts' },
       { value: (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0), label: '🚀 Rocket / Missile Alerts' },
+      { value: DATA.flash_warnings ?? 0, label: '⚡ Flash Warnings (מבזק)' },
     ];
 
     document.getElementById('statsGrid').innerHTML = cards.map(c => `
@@ -976,7 +1002,7 @@
     tbody.innerHTML = recent.map(a => `
       <tr>
         <td style="white-space:nowrap;color:#8b949e">${formatDate(a.date)}</td>
-        <td style="white-space:nowrap">${a.type === 'drone' ? '✈️' : '🚀'} ${(a.regions || []).map(r => `<span class="tag">${r}</span>`).join('')}</td>
+        <td style="white-space:nowrap">${a.type === 'drone' ? '✈️' : a.type === 'flash' ? '⚡' : '🚀'} ${(a.regions || []).map(r => `<span class="tag">${r}</span>`).join('')}</td>
         <td style="color:#8b949e;max-width:350px;overflow:hidden;text-overflow:ellipsis">${a.text || ''}</td>
       </tr>
     `).join('');
@@ -1305,7 +1331,7 @@
     document.getElementById('themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
     // Re-render charts so axis/grid colors update
     renderDailyChart(); renderByRegion(); renderRanking(); renderByCity();
-    renderByHour(); renderShelter(); renderDrone(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
+    renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
   }
 
   // ─── Zone Status ─────────────────────────────────────────────────────────────
@@ -1536,6 +1562,91 @@
         labels: sortedCities.map(([c]) => c),
         datasets: [{ label: 'Drone Alerts', data: sortedCities.map(([, v]) => v),
           backgroundColor: '#388bfd', borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+  }
+
+  function renderFlash() {
+    const flashTotal   = DATA.flash_warnings  || 0;
+    const flashRegions = DATA.flash_regions   || {};
+    const flashCities  = DATA.flash_cities    || {};
+    const totalAlerts  = DATA.total_alerts    || 0;
+
+    const topRegion = Object.entries(flashRegions).sort((a, b) => b[1] - a[1])[0];
+    const topCity   = Object.entries(flashCities).sort((a, b) => b[1] - a[1])[0];
+    const pct = (flashTotal + totalAlerts) > 0
+      ? ((flashTotal / (flashTotal + totalAlerts)) * 100).toFixed(1)
+      : 0;
+
+    document.getElementById('flashStatsGrid').innerHTML = `
+      <div class="stat-card">
+        <div class="value">${flashTotal.toLocaleString()}</div>
+        <div class="label">⚡ Total Flash Warnings</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${pct}%</div>
+        <div class="label">of All Events Are Flash Warnings</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${topRegion ? topRegion[0] : '—'}</div>
+        <div class="label">Most Warned Region</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${topCity ? topCity[0] : '—'}</div>
+        <div class="label">Most Warned City</div>
+      </div>
+    `;
+
+    if (flashTotal === 0) {
+      document.getElementById('flashStatsGrid').innerHTML +=
+        '<p style="color:var(--text-muted);padding:20px">No flash warning data yet — run the Backfill workflow to populate historical data.</p>';
+      return;
+    }
+
+    // Regions chart
+    const sortedRegions = REGIONS
+      .filter(r => (flashRegions[r] || 0) > 0)
+      .sort((a, b) => (flashRegions[b] || 0) - (flashRegions[a] || 0));
+    const rHeight = Math.max(300, sortedRegions.length * 32);
+    document.getElementById('flashRegionChartWrap').style.height = rHeight + 'px';
+    destroyChart('chartFlashRegion');
+    new Chart(document.getElementById('chartFlashRegion'), {
+      type: 'bar',
+      data: {
+        labels: sortedRegions,
+        datasets: [{ label: 'Flash Warnings', data: sortedRegions.map(r => flashRegions[r] || 0),
+          backgroundColor: '#e3b341', borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+
+    // Cities chart (top 20)
+    const sortedCities = Object.entries(flashCities)
+      .sort((a, b) => b[1] - a[1]).slice(0, 20).reverse();
+    const cHeight = Math.max(300, sortedCities.length * 32);
+    document.getElementById('flashCityChartWrap').style.height = cHeight + 'px';
+    destroyChart('chartFlashCity');
+    new Chart(document.getElementById('chartFlashCity'), {
+      type: 'bar',
+      data: {
+        labels: sortedCities.map(([c]) => c),
+        datasets: [{ label: 'Flash Warnings', data: sortedCities.map(([, v]) => v),
+          backgroundColor: '#e3b341', borderRadius: 4 }]
       },
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
@@ -1787,6 +1898,7 @@
     renderByHour();
     renderShelter();
     renderDrone();
+    renderFlash();
     renderWeeklyTrend();
     renderCompare();
     renderHeatmap();
