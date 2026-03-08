@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pikud HaOref Alerts Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- Leaflet for real Israel map -->
+  <!-- Leaflet for 2D Israel map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- MapLibre GL + deck.gl for 3D extruded map -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
   <style>
     :root {
       --bg: #0d1117;
@@ -616,6 +620,7 @@
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
   <button data-tab="map">🗺️ Map</button>
+  <button data-tab="mycity">🏠 My City</button>
 </nav>
 
 <!-- Live situation banner -->
@@ -913,23 +918,103 @@
   <!-- ===== MAP ===== -->
   <div id="tab-map" class="tab-content">
     <div class="chart-card">
-      <h2>🗺️ Israel Alert Intensity Map</h2>
-      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 14px">
-        Each circle = one Home Front Command region. Size &amp; colour = alert intensity.
-        🟢 Quiet &nbsp;🟡 Moderate &nbsp;🔴 High &nbsp; — click any circle to drill down.
-      </p>
-      <div class="stats-grid" id="mapStatsGrid" style="margin-bottom:16px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <h2>🗺️ Israel Alert Intensity Map</h2>
+          <p style="color:var(--text-muted);font-size:13px;margin-top:4px">
+            Each region sized &amp; coloured by alert intensity — click any to drill down.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="mapMode2D" class="export-btn" onclick="setMapMode('2d')"
+            style="padding:6px 18px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">
+            2D
+          </button>
+          <button id="mapMode3D" class="export-btn" onclick="setMapMode('3d')"
+            style="padding:6px 18px;font-weight:700">
+            3D ✨
+          </button>
+        </div>
+      </div>
+      <div class="stats-grid" id="mapStatsGrid" style="margin:14px 0 0"></div>
     </div>
-    <!-- Map fills its own full-width card so Leaflet gets proper dimensions -->
-    <div class="chart-card" style="padding:0;overflow:hidden;border-radius:10px">
+
+    <!-- 2D Leaflet map -->
+    <div id="map2DCard" class="chart-card" style="padding:0;overflow:hidden;border-radius:10px">
       <div id="israelMap" style="height:620px;width:100%;border-radius:10px"></div>
     </div>
+
+    <!-- 3D deck.gl + MapLibre map (hidden until 3D mode) -->
+    <div id="map3DCard" class="chart-card" style="display:none;padding:0;overflow:hidden;border-radius:10px">
+      <div id="threeDMap" style="height:620px;width:100%;border-radius:10px;position:relative"></div>
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+                  background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:5px 14px;
+                  border-radius:20px;pointer-events:none;white-space:nowrap">
+        🖱️ Drag to rotate · Scroll to zoom · Click a column to drill down
+      </div>
+    </div>
+
     <div class="chart-card">
       <div class="map-legend" style="justify-content:center">
         <span class="map-legend-label">0 alerts</span>
         <div class="map-legend-bar" style="width:220px"></div>
         <span class="map-legend-label">Highest</span>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== MY CITY ===== -->
+  <div id="tab-mycity" class="tab-content">
+    <div class="chart-card" style="max-width:680px;margin:0 auto">
+      <h2 style="margin-bottom:6px">🏠 If You Lived Here…</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">
+        Search for your city or region to see a personalised alert summary.
+      </p>
+
+      <!-- Search input -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <input id="myCityInput" list="myCityList" placeholder="Type city or region name…"
+          style="flex:1;min-width:200px;padding:10px 14px;border-radius:8px;
+                 border:1px solid var(--border);background:var(--surface2);
+                 color:var(--text);font-size:15px;outline:none"
+          oninput="lookupMyCity()" />
+        <datalist id="myCityList"></datalist>
+        <button onclick="lookupMyCity()"
+          style="padding:10px 22px;border-radius:8px;border:none;
+                 background:var(--blue);color:#fff;font-weight:700;cursor:pointer;font-size:15px">
+          Search
+        </button>
+      </div>
+      <p id="myCityHint" style="color:var(--text-muted);font-size:12px;margin-top:8px">
+        Try typing "תל אביב", "ירושלים", or any region like "אזור דן".
+      </p>
+    </div>
+
+    <!-- Results (hidden until search) -->
+    <div id="myCityResults" style="display:none;max-width:680px;margin:0 auto">
+
+      <!-- Hero card -->
+      <div class="chart-card" id="myCityHero" style="text-align:center;padding:32px 24px">
+        <div id="myCityEmoji"  style="font-size:56px;line-height:1;margin-bottom:8px"></div>
+        <div id="myCityName"  style="font-size:22px;font-weight:700;margin-bottom:4px"></div>
+        <div id="myCityRegion" style="font-size:14px;color:var(--text-muted)"></div>
+      </div>
+
+      <!-- Stat grid -->
+      <div class="stats-grid" id="myCityStats"></div>
+
+      <!-- Narrative -->
+      <div class="chart-card" id="myCityNarrative" style="font-size:15px;line-height:1.7"></div>
+
+      <!-- Comparison bar -->
+      <div class="chart-card" id="myCityCompCard" style="display:none">
+        <h3 style="margin-bottom:14px">📊 How <span class="mcName"></span> compares</h3>
+        <div style="margin-bottom:10px;font-size:13px;color:var(--text-muted)">
+          Alerts vs most-hit region in the same area
+        </div>
+        <div id="myCityCompBar"></div>
+      </div>
+
     </div>
   </div>
 
@@ -1077,9 +1162,12 @@
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       setHashParam('tab', btn.dataset.tab);
       // Leaflet needs a size recalculation after the container becomes visible
-      if (btn.dataset.tab === 'map' && leafletMap) {
-        setTimeout(() => leafletMap.invalidateSize(), 50);
+      if (btn.dataset.tab === 'map') {
+        if (currentMapMode === '2d' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 50);
+        else if (currentMapMode === '3d') setTimeout(() => render3DMap(), 80);
       }
+      // My City: re-populate datalist whenever tab is opened
+      if (btn.dataset.tab === 'mycity') renderMyCity();
     });
   });
 
@@ -1710,7 +1798,7 @@
     document.getElementById('themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
     // Re-render charts so axis/grid colors update
     renderDailyChart(); renderByRegion(); renderRanking(); renderByCity();
-    renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderMap(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
+    renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderMap(); renderWeeklyTrend(); renderCompare(); renderHeatmap(); renderMyCity();
   }
 
   // ─── Zone Status ─────────────────────────────────────────────────────────────
@@ -2119,13 +2207,12 @@
       zoomControl: true,
     });
 
-    // OpenStreetMap tiles (dark-ish via CartoDB dark_matter for dashboard feel)
+    // Esri World Street Map – Google-Maps-like appearance, free, no API key
     L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
       {
-        attribution: '© <a href="https://carto.com/">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        subdomains: 'abcd',
-        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+        maxZoom: 17,
       }
     ).addTo(leafletMap);
   }
@@ -2184,6 +2271,307 @@
 
     // Force Leaflet to recalculate size (needed when tab was hidden at init)
     setTimeout(() => leafletMap && leafletMap.invalidateSize(), 100);
+  }
+
+  // ─── 3D Extruded Map ─────────────────────────────────────────────────────
+  let deckGlMap   = null;   // MapLibre GL instance for 3D
+  let deckOverlay = null;   // deck.gl MapboxOverlay
+  let currentMapMode = '2d';
+
+  function setMapMode(mode) {
+    currentMapMode = mode;
+    const card2D = document.getElementById('map2DCard');
+    const card3D = document.getElementById('map3DCard');
+    const btn2D  = document.getElementById('mapMode2D');
+    const btn3D  = document.getElementById('mapMode3D');
+
+    if (mode === '2d') {
+      card2D.style.display = '';
+      card3D.style.display = 'none';
+      btn2D.style.background   = 'var(--blue)';
+      btn2D.style.color        = '#fff';
+      btn2D.style.borderColor  = 'var(--blue)';
+      btn3D.style.background   = '';
+      btn3D.style.color        = '';
+      btn3D.style.borderColor  = '';
+      setTimeout(() => leafletMap && leafletMap.invalidateSize(), 120);
+    } else {
+      card2D.style.display = 'none';
+      card3D.style.display = '';
+      btn3D.style.background   = 'var(--purple)';
+      btn3D.style.color        = '#fff';
+      btn3D.style.borderColor  = 'var(--purple)';
+      btn2D.style.background   = '';
+      btn2D.style.color        = '';
+      btn2D.style.borderColor  = '';
+      setTimeout(() => render3DMap(), 80);   // give DOM time to show
+    }
+  }
+
+  function render3DMap() {
+    if (typeof maplibregl === 'undefined' || typeof deck === 'undefined') {
+      document.getElementById('threeDMap').innerHTML =
+        '<div style="padding:40px;text-align:center;color:#8b949e">3D libraries not loaded — please refresh the page.</div>';
+      return;
+    }
+    const regions = DATA.regions || {};
+    const maxVal  = Math.max(...REGIONS.map(r => regions[r] || 0), 1);
+
+    // Build column data for each region centre
+    const columnData = Object.entries(REGION_CENTERS).map(([region, coords]) => ({
+      region,
+      position: [coords.lon, coords.lat],
+      count:    regions[region] || 0,
+      label:    coords.label,
+    }));
+
+    function colColor(count) {
+      const t = count / maxVal;
+      if (t === 0)    return [80,  180, 80,  180];
+      if (t < 0.25)  return [100, 200, 80,  200];
+      if (t < 0.5)   return [240, 180, 40,  210];
+      if (t < 0.75)  return [240, 100, 30,  220];
+      return                 [248, 81,  73,  240];
+    }
+
+    // Init MapLibre map (once)
+    if (!deckGlMap) {
+      deckGlMap = new maplibregl.Map({
+        container: 'threeDMap',
+        style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        center:  [35.0, 31.5],
+        zoom:    6.5,
+        pitch:   55,
+        bearing: 15,
+        antialias: true,
+      });
+
+      deckOverlay = new deck.MapboxOverlay({
+        interleaved: false,
+        layers: [],
+        getTooltip: ({ object }) =>
+          object && {
+            html: `<b>${object.region}</b><br>${object.count} alert${object.count !== 1 ? 's' : ''}`,
+            style: { background: '#161b22', color: '#e6edf3', border: '1px solid #30363d',
+                     borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
+          },
+      });
+
+      deckGlMap.addControl(deckOverlay);
+    }
+
+    // Update / refresh layers
+    deckOverlay.setProps({
+      layers: [
+        new deck.ColumnLayer({
+          id:              'alert-columns',
+          data:            columnData,
+          getPosition:     d => d.position,
+          getElevation:    d => Math.max(d.count * 600, d.count > 0 ? 4000 : 0),
+          getFillColor:    d => colColor(d.count),
+          radius:          9000,
+          diskResolution:  24,
+          extruded:        true,
+          pickable:        true,
+          elevationScale:  1,
+          material:        { ambient: 0.35, diffuse: 0.6, shininess: 32 },
+          onClick:         info => info.object && openDrillDown(info.object.region),
+        }),
+        new deck.TextLayer({
+          id:          'region-labels',
+          data:        columnData.filter(d => d.count > 0),
+          getPosition: d => [...d.position, Math.max(d.count * 600, 4000) + 2000],
+          getText:     d => `${d.label}\n${d.count}`,
+          getSize:     12,
+          getColor:    [230, 237, 243, 220],
+          getTextAnchor: 'middle',
+          getAlignmentBaseline: 'center',
+          background:  true,
+          getBackgroundColor: [22, 27, 34, 180],
+          backgroundPadding: [3, 2, 3, 2],
+          pickable: false,
+        }),
+      ],
+    });
+  }
+
+  // ─── My City / "If You Lived Here" ──────────────────────────────────────
+  function renderMyCity() {
+    // Populate the datalist with all cities + regions
+    const dl = document.getElementById('myCityList');
+    if (!dl) return;
+    const cities  = Object.keys(DATA.cities  || {});
+    const regKeys = REGIONS;
+    const all     = [...cities, ...regKeys].sort();
+    dl.innerHTML  = all.map(n => `<option value="${n}">`).join('');
+  }
+
+  function lookupMyCity() {
+    const input   = document.getElementById('myCityInput');
+    const results = document.getElementById('myCityResults');
+    const hint    = document.getElementById('myCityHint');
+    if (!input) return;
+    const query = input.value.trim();
+    if (!query) return;
+
+    // Try exact city match first, then region match
+    const cities   = DATA.cities   || {};
+    const drones   = DATA.drone_cities || {};
+    const shelter  = DATA.shelter_minutes || {};
+    const cbr      = DATA.city_by_region  || {};
+    const regions  = DATA.regions  || {};
+    const daily    = DATA.daily    || {};
+    const totalAlerts = DATA.total_alerts || 1;
+
+    let isRegion  = false;
+    let name      = query;
+    let count     = 0;
+    let droneCount = 0;
+    let shelterMin = 0;
+    let regionName = '';
+
+    // Exact city lookup
+    if (cities[name] !== undefined) {
+      count      = cities[name]     || 0;
+      droneCount = drones[name]     || 0;
+      shelterMin = shelter[name]    || 0;
+      // Find which region this city belongs to (first match)
+      for (const [rg, rcities] of Object.entries(cbr)) {
+        if (rcities[name] !== undefined) { regionName = rg; break; }
+      }
+    }
+    // Exact region lookup (Hebrew "אזור ...")
+    else if (regions[name] !== undefined) {
+      isRegion   = true;
+      count      = regions[name]    || 0;
+      droneCount = (DATA.drone_regions || {})[name] || 0;
+      // Sum shelter for all cities in this region
+      const rcities = cbr[name] || {};
+      for (const c of Object.keys(rcities)) shelterMin += shelter[c] || 0;
+      regionName = name;
+    }
+    // Fuzzy city fallback (partial match)
+    else {
+      const match = Object.entries(cities).find(([c]) => c.includes(query) || query.includes(c));
+      if (match) {
+        name       = match[0];
+        count      = match[1]         || 0;
+        droneCount = drones[name]     || 0;
+        shelterMin = shelter[name]    || 0;
+        for (const [rg, rc] of Object.entries(cbr)) {
+          if (rc[name] !== undefined) { regionName = rg; break; }
+        }
+      } else {
+        hint.textContent = '❌ No data found for "' + query + '". Try a different spelling.';
+        results.style.display = 'none';
+        return;
+      }
+    }
+
+    hint.textContent = '';
+    results.style.display = '';
+
+    // ── Hero ──────────────────────────────────────────────────────────────
+    const shelterH    = (shelterMin / 60).toFixed(1);
+    const dangerEmoji = count === 0 ? '🟢' : count < 10 ? '🟡' : count < 50 ? '🟠' : '🔴';
+    document.getElementById('myCityEmoji').textContent  = dangerEmoji;
+    document.getElementById('myCityName').textContent   = name;
+    document.getElementById('myCityRegion').textContent =
+      isRegion ? 'Region · Home Front Command zone' : (regionName ? `Region: ${regionName}` : 'City');
+
+    // ── Stat cards ────────────────────────────────────────────────────────
+    // Weeks of data available
+    const days  = Object.keys(daily).length || 1;
+    const weeks = Math.max(days / 7, 1);
+    const perWeek = (count / weeks).toFixed(1);
+    // % of all alerts
+    const pct = ((count / Math.max(totalAlerts, 1)) * 100).toFixed(1);
+
+    document.getElementById('myCityStats').innerHTML = [
+      { value: count,                label: 'Total Alerts'                       },
+      { value: droneCount,           label: 'Drone Intrusions'                   },
+      { value: shelterMin + ' min',  label: `Shelter Time (${shelterH}h total)`  },
+      { value: perWeek + '/wk',      label: 'Avg Alerts per Week'                },
+      { value: pct + '%',            label: 'Share of All National Alerts'        },
+    ].map(c =>
+      `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`
+    ).join('');
+
+    // ── Narrative ─────────────────────────────────────────────────────────
+    const narrative = buildNarrative(name, isRegion, count, droneCount, shelterMin, perWeek, regionName, days);
+    document.getElementById('myCityNarrative').innerHTML = narrative;
+
+    // ── Comparison bar ────────────────────────────────────────────────────
+    const compCard = document.getElementById('myCityCompCard');
+    const compBar  = document.getElementById('myCityCompBar');
+    // Find peer: other cities in same region (or top regions)
+    const peers = isRegion
+      ? Object.entries(regions).filter(([r]) => r !== name).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      : Object.entries(cbr[regionName] || {}).filter(([c]) => c !== name).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    if (peers.length > 0) {
+      compCard.style.display = '';
+      document.querySelectorAll('#myCityCompCard .mcName').forEach(el => el.textContent = name);
+      const maxComp = Math.max(count, ...peers.map(p => p[1]), 1);
+      const rows    = [[name, count], ...peers];
+      compBar.innerHTML = rows.map(([label, val]) => {
+        const pctBar = Math.round((val / maxComp) * 100);
+        const isMe   = label === name;
+        return `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+            <span style="font-weight:${isMe?700:400};color:${isMe?'var(--blue)':'var(--text)'}">${label}</span>
+            <span style="color:var(--text-muted)">${val} alert${val!==1?'s':''}</span>
+          </div>
+          <div style="background:var(--surface2);border-radius:4px;height:10px;overflow:hidden">
+            <div style="height:100%;border-radius:4px;background:${isMe?'var(--blue)':'var(--border)'};width:${pctBar}%;transition:width .4s"></div>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      compCard.style.display = 'none';
+    }
+  }
+
+  function buildNarrative(name, isRegion, count, droneCount, shelterMin, perWeek, regionName, days) {
+    const shelterH = (shelterMin / 60).toFixed(1);
+    const what     = isRegion ? 'region' : 'city';
+
+    if (count === 0) {
+      return `<p>✅ <b>${name}</b> has had <b>zero recorded alerts</b> in this dataset — it appears to be one of the quieter ${what}s in the country. That said, the Home Front Command still recommends all residents know the location of their nearest shelter.</p>`;
+    }
+
+    let level = '';
+    if      (count < 5)  level = 'relatively low';
+    else if (count < 20) level = 'moderate';
+    else if (count < 60) level = 'significant';
+    else                 level = 'very high';
+
+    const droneNote = droneCount > 0
+      ? ` Of those, <b>${droneCount}</b> were drone intrusion alerts (UAV / hostile aircraft).`
+      : '';
+
+    const shelterNote = shelterMin > 0
+      ? ` Based on recorded shelter durations, residents here spent an estimated <b>${shelterH} hours</b> in shelters (${shelterMin} minutes total).`
+      : '';
+
+    const regionNote = regionName && !isRegion
+      ? ` ${name} is part of the <b>${regionName}</b> Home Front Command zone.`
+      : '';
+
+    const weekNote = parseFloat(perWeek) >= 1
+      ? ` That works out to roughly <b>${perWeek} alerts per week</b> over the ${days}-day period in this dataset.`
+      : '';
+
+    return `
+      <p style="margin-bottom:12px">
+        📍 <b>${name}</b> has experienced <b>${count} alert${count!==1?'s':''}</b> — a ${level} exposure level.${droneNote}${weekNote}
+      </p>
+      <p style="margin-bottom:12px">
+        ${shelterNote}${regionNote}
+      </p>
+      <p style="color:var(--text-muted);font-size:13px">
+        🛡️ If you live here, your nearest reinforced space (מרחב מוגן) should be reachable in under <b>1–2 minutes</b>. Always know the shelter time countdown for your zone.
+      </p>`;
   }
 
   // ─── Alert Duration stats (Feature 1) ───────────────────────────────────
@@ -2523,6 +2911,7 @@
     renderWeeklyTrend();
     renderCompare();
     renderHeatmap();
+    renderMyCity();
   }
 
   init();
