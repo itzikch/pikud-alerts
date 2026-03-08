@@ -658,11 +658,10 @@
     </div>
 
     <div class="chart-card">
-      <h2>🗺️ Zone Status — Hot / Warm / Quiet</h2>
+      <h2>🗺️ Zone Status — Hot / Quiet</h2>
       <p style="color:var(--text-muted);font-size:12px;margin:-4px 0 12px">
-        🔴 <b>Hot</b> — alert in last 24h &nbsp;|&nbsp;
-        🟡 <b>Warm</b> — alert in last 7 days &nbsp;|&nbsp;
-        🟢 <b>Quiet</b> — no alert for 7+ days
+        🔴 <b>Hot</b> — alert in the last 24 hours &nbsp;|&nbsp;
+        🟢 <b>Quiet</b> — no alert in the last 24 hours
       </p>
       <div class="zone-grid" id="zoneGrid"></div>
     </div>
@@ -869,6 +868,43 @@
       <h2>⚡ Top 20 Cities — Flash Warnings</h2>
       <div class="chart-wrap-tall" id="flashCityChartWrap">
         <canvas id="chartFlashCity"></canvas>
+      </div>
+    </div>
+
+    <!-- ── False Positive Analysis ── -->
+    <div class="chart-card" id="fpSection" style="display:none">
+      <h2>🎭 False Positive Alerts — City Analysis</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 12px">
+        A <b>false positive</b> occurs when a city is listed in a flash warning (מבזק) but
+        does <em>not</em> appear in the subsequent real rocket/drone alert. These residents
+        were told to prepare but no threat reached their area.
+        <br><span style="font-size:12px">FP rate = false positive occurrences ÷ total flash appearances for that city.</span>
+      </p>
+      <div class="stats-grid" id="fpStatsGrid" style="margin-bottom:14px"></div>
+      <div class="chart-wrap-tall" id="fpChartWrap">
+        <canvas id="chartFpCity"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card" id="fpTableSection" style="display:none">
+      <h2>📋 False Positive Rate — All Cities</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 12px">
+        Sorted by false positive count. Only cities that appeared in ≥1 converted flash warning are shown.
+      </p>
+      <input type="text" id="fpSearch" class="city-search" placeholder="Search city…"
+        oninput="filterFpTable()" style="margin-bottom:12px" />
+      <div style="overflow-x:auto">
+        <table class="alerts-table" id="fpTable">
+          <thead>
+            <tr>
+              <th onclick="sortFpTable('city')" style="cursor:pointer">City ↕</th>
+              <th onclick="sortFpTable('flash')" style="cursor:pointer">Flash Appearances ↕</th>
+              <th onclick="sortFpTable('fp')" style="cursor:pointer">FP Count ↕</th>
+              <th onclick="sortFpTable('rate')" style="cursor:pointer">FP Rate ↕</th>
+            </tr>
+          </thead>
+          <tbody id="fpTableBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1904,6 +1940,7 @@
     const grid = document.getElementById('zoneGrid');
     if (!grid) return;
 
+    // Build rows for all regions; Hot = alert today (within 24h), Quiet = otherwise
     const rows = REGIONS.map(region => {
       let lastDate = null;
       for (const [date, regions] of Object.entries(daily)) {
@@ -1911,12 +1948,26 @@
       }
       if (!lastDate) return { region, status: 'quiet', label: 'Never alerted', days: 9999 };
       const diff = Math.floor((today - new Date(lastDate + 'T00:00:00')) / 86400000);
-      const status = diff <= 1 ? 'hot' : diff <= 7 ? 'warm' : 'quiet';
-      const label  = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+      // Hot = alerted today or yesterday (within ~24h window given daily granularity)
+      const status = diff <= 1 ? 'hot' : 'quiet';
+      const label  = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff}d ago`;
       return { region, status, label, days: diff };
-    }).filter(r => r.days < 9999).sort((a, b) => a.days - b.days);
+    })
+    // Show hot zones first (sorted by recency), then quiet zones also sorted by recency
+    .sort((a, b) => {
+      if (a.status === b.status) return a.days - b.days;
+      return a.status === 'hot' ? -1 : 1;
+    });
 
-    grid.innerHTML = rows.map(r => `
+    const hotCount   = rows.filter(r => r.status === 'hot').length;
+    const quietCount = rows.length - hotCount;
+
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;display:flex;gap:16px;margin-bottom:4px;font-size:12px;color:var(--text-muted)">
+        <span>🔴 <b style="color:var(--red)">${hotCount}</b> Hot zones</span>
+        <span>🟢 <b style="color:var(--green)">${quietCount}</b> Quiet zones</span>
+      </div>
+    ` + rows.map(r => `
       <div class="zone-card">
         <div class="zone-dot ${r.status}"></div>
         <div>
@@ -2230,6 +2281,136 @@
         }
       }
     });
+
+    // ── False Positive Analysis ──────────────────────────────────────────────
+    const fpCount = DATA.city_fp_count || {};
+    const fpSection      = document.getElementById('fpSection');
+    const fpTableSection = document.getElementById('fpTableSection');
+
+    // Only show if we have FP data
+    if (Object.keys(fpCount).length === 0) {
+      if (fpSection)      fpSection.style.display      = 'none';
+      if (fpTableSection) fpTableSection.style.display = 'none';
+    } else {
+      if (fpSection)      fpSection.style.display      = '';
+      if (fpTableSection) fpTableSection.style.display = '';
+
+      // Build merged table data: cities with flash appearances AND fp counts
+      // Key insight: fp_rate = fp_count / flash_cities[city]
+      const fpRows = Object.entries(fpCount)
+        .map(([city, fp]) => ({
+          city,
+          flash: flashCities[city] || 0,
+          fp,
+          rate:  flashCities[city] > 0 ? (fp / flashCities[city] * 100) : 0,
+        }))
+        .filter(r => r.flash > 0)
+        .sort((a, b) => b.fp - a.fp);
+
+      // Stats
+      const totalFpEvents = fpRows.reduce((s, r) => s + r.fp, 0);
+      const topFpCity     = fpRows[0];
+      const highestRate   = [...fpRows].sort((a, b) => b.rate - a.rate)[0];
+      const avgRate       = fpRows.length > 0
+        ? (fpRows.reduce((s, r) => s + r.rate, 0) / fpRows.length).toFixed(1)
+        : 0;
+
+      const fpStatsGrid = document.getElementById('fpStatsGrid');
+      if (fpStatsGrid) {
+        fpStatsGrid.innerHTML = [
+          { value: fpRows.length,     label: 'Cities with ≥1 FP alert'                                       },
+          { value: totalFpEvents,     label: 'Total FP occurrences'                                           },
+          { value: topFpCity ? topFpCity.city   : '—', label: `Most FP city (${topFpCity ? topFpCity.fp : 0}×)` },
+          { value: highestRate ? Math.round(highestRate.rate) + '%' : '—',
+            label: `Highest FP rate · ${highestRate ? highestRate.city : '—'}`                                 },
+          { value: avgRate + '%',     label: 'Avg FP rate across warned cities'                               },
+        ].map(c =>
+          `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`
+        ).join('');
+      }
+
+      // Top-20 FP city bar chart (sorted by fp count, highest on top)
+      const topFp = fpRows.slice(0, 20).reverse();
+      const fh    = Math.max(300, topFp.length * 34);
+      document.getElementById('fpChartWrap').style.height = fh + 'px';
+      destroyChart('chartFpCity');
+      new Chart(document.getElementById('chartFpCity'), {
+        type: 'bar',
+        data: {
+          labels: topFp.map(r => r.city),
+          datasets: [
+            {
+              label: 'FP Occurrences',
+              data:  topFp.map(r => r.fp),
+              backgroundColor: '#f85149',
+              borderRadius: 4,
+            },
+            {
+              label: 'Flash Appearances',
+              data:  topFp.map(r => r.flash),
+              backgroundColor: '#e3b34155',
+              borderRadius: 4,
+            },
+          ],
+        },
+        options: {
+          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, labels: { color: '#8b949e' } },
+            tooltip: {
+              callbacks: {
+                afterLabel: ctx => {
+                  const r = topFp[ctx.dataIndex];
+                  return `FP rate: ${r.rate.toFixed(0)}%`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, stacked: false },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          },
+        },
+      });
+
+      // Store for sort/filter
+      window._fpTableData = fpRows;
+      renderFpTable(fpRows);
+    }
+  }
+
+  // ─── FP table helpers ─────────────────────────────────────────────────────
+  let _fpSortCol = 'fp', _fpSortDir = -1;
+
+  function renderFpTable(rows) {
+    const tbody = document.getElementById('fpTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = rows.map(r => {
+      const rateColor = r.rate >= 75 ? '#f85149' : r.rate >= 50 ? '#e3b341' : '#3fb950';
+      return `<tr>
+        <td>${r.city}</td>
+        <td>${r.flash}</td>
+        <td>${r.fp}</td>
+        <td><span style="color:${rateColor};font-weight:700">${r.rate.toFixed(0)}%</span></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No data</td></tr>';
+  }
+
+  function sortFpTable(col) {
+    if (_fpSortCol === col) _fpSortDir *= -1; else { _fpSortCol = col; _fpSortDir = -1; }
+    const rows = [...(window._fpTableData || [])];
+    rows.sort((a, b) => {
+      const av = col === 'city' ? a.city : col === 'flash' ? a.flash : col === 'fp' ? a.fp : a.rate;
+      const bv = col === 'city' ? b.city : col === 'flash' ? b.flash : col === 'fp' ? b.fp : b.rate;
+      return _fpSortDir * (typeof av === 'string' ? av.localeCompare(bv) : bv - av);
+    });
+    renderFpTable(rows);
+  }
+
+  function filterFpTable() {
+    const q = (document.getElementById('fpSearch')?.value || '').toLowerCase();
+    const rows = (window._fpTableData || []).filter(r => r.city.toLowerCase().includes(q));
+    renderFpTable(rows);
   }
 
   // ─── Region drill-down modal (Feature 6) ─────────────────────────────────

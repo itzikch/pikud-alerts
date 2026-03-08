@@ -204,6 +204,7 @@ async def backfill() -> None:
         },
         "pending_flash": [],
         "hourly_counts": {str(h): 0 for h in range(24)},
+        "city_fp_count": {},   # cities warned in מבזק but absent from subsequent real alert
         "daily": {}, "recent": [],
     }
 
@@ -342,6 +343,10 @@ async def backfill() -> None:
                 fc["converted"]         += 1
                 fc["total_gap_seconds"] += diff_sec
                 fc["count_with_gap"]    += 1
+                # False-positive cities: warned in מבזק but absent from the real alert
+                fp_map = data.setdefault("city_fp_count", {})
+                for city in pf_cities - ac:
+                    fp_map[city] = fp_map.get(city, 0) + 1
             else:
                 remaining_flash.append(pf)
         pending_flash = remaining_flash

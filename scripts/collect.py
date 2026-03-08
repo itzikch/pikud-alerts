@@ -50,6 +50,9 @@ _FRESH_FLASH_CONVERSION = lambda: {
     "total_gap_seconds": 0, "count_with_gap": 0,
 }
 
+# city_fp_count — cities warned in a מבזק but absent from the following real alert.
+# flash_cities already counts total flash appearances; fp_rate = fp_count / flash_count.
+
 
 # ─── Data loading / saving ────────────────────────────────────────────────────
 
@@ -67,6 +70,7 @@ def load_data() -> dict:
             "flash_conversion": _FRESH_FLASH_CONVERSION(),
             "pending_flash": [],
             "hourly_counts": {str(h): 0 for h in range(24)},
+            "city_fp_count": {},   # cities warned in מבזק but absent from subsequent real alert
         }
         for k, v in defaults.items():
             if k not in data:
@@ -84,6 +88,7 @@ def load_data() -> dict:
         "flash_conversion": _FRESH_FLASH_CONVERSION(),
         "pending_flash": [],
         "hourly_counts": {str(h): 0 for h in range(24)},
+        "city_fp_count": {},
         "daily": {}, "recent": [],
     }
 
@@ -223,6 +228,11 @@ def check_flash_conversion(
             fc["converted"]         = fc.get("converted", 0) + 1
             fc["total_gap_seconds"] = fc.get("total_gap_seconds", 0) + diff_sec
             fc["count_with_gap"]    = fc.get("count_with_gap", 0) + 1
+            # False-positive cities: warned in the מבזק but absent from the real alert.
+            # These residents were told to prepare but no rocket/drone reached their area.
+            fp_map = data.setdefault("city_fp_count", {})
+            for city in pf_cities - ac:           # in flash, NOT in actual alert
+                fp_map[city] = fp_map.get(city, 0) + 1
             # consumed — don't re-add to remaining
         else:
             remaining.append(pf)
