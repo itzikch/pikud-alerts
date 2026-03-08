@@ -12,7 +12,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from telethon import TelegramClient
@@ -25,6 +25,9 @@ SESSION  = os.environ["TG_SESSION"]
 
 CHANNEL   = "@PikudHaOref_all"
 DATA_FILE = Path(__file__).parent.parent / "docs" / "data.json"
+
+# Israel Standard Time (UTC+2; approximate — IDT is UTC+3 in summer)
+IST = timezone(timedelta(hours=2))
 
 REGIONS = [
     "אזור שומרון", "אזור השפלה", "אזור יהודה", "אזור לכיש",
@@ -42,6 +45,11 @@ ALERT_KEYWORDS = [
     "שיירת כלי טיס", "כלי טיס עוין", "חשש לחדירה", "צבע אדום", "כוננות",
 ]
 
+_FRESH_FLASH_CONVERSION = lambda: {
+    "converted": 0, "not_converted": 0,
+    "total_gap_seconds": 0, "count_with_gap": 0,
+}
+
 
 # ─── Data loading / saving ────────────────────────────────────────────────────
 
@@ -54,6 +62,11 @@ def load_data() -> dict:
             "cities": {}, "drone_alerts": 0, "drone_regions": {}, "drone_cities": {},
             "flash_warnings": 0, "flash_regions": {}, "flash_cities": {},
             "shelter_minutes": {}, "pending_shelter": [],
+            "city_by_region": {},
+            "event_log": [],
+            "flash_conversion": _FRESH_FLASH_CONVERSION(),
+            "pending_flash": [],
+            "hourly_counts": {str(h): 0 for h in range(24)},
         }
         for k, v in defaults.items():
             if k not in data:
@@ -66,6 +79,11 @@ def load_data() -> dict:
         "drone_alerts": 0, "drone_regions": {}, "drone_cities": {},
         "flash_warnings": 0, "flash_regions": {}, "flash_cities": {},
         "shelter_minutes": {}, "pending_shelter": [],
+        "city_by_region": {},
+        "event_log": [],
+        "flash_conversion": _FRESH_FLASH_CONVERSION(),
+        "pending_flash": [],
+        "hourly_counts": {str(h): 0 for h in range(24)},
         "daily": {}, "recent": [],
     }
 
@@ -92,9 +110,6 @@ def parse_event_end(text: str) -> dict | None:
     """
     Returns {'type': 'rocket'|'drone', 'cities': [...], 'regions': [...]}
     or None if this is not an event-end message.
-
-    The event-ended message now includes the specific cities that were under
-    alert, enabling precise per-city shelter-time calculation.
     """
     if not text or "האירוע הסתיים" not in text:
         return None
@@ -139,6 +154,82 @@ def extract_cities(text: str) -> list[str]:
     return list(dict.fromkeys(cities))
 
 
+def extract_regions_with_cities(text: str) -> dict:
+    """
+    Returns {region_name: [city1, city2, ...]} preserving the region→city
+    grouping from the message format. Used for city_by_region tracking.
+    """
+    result: dict[str, list[str]] = {}
+    lines = text.split("\n")
+    current_region: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"\*\*אזור .+\*\*", stripped):
+            region_name = stripped.strip("*").strip()
+            if region_name in REGIONS:
+                current_region = region_name
+                result.setdefault(current_region, [])
+            else:
+                current_region = None
+            continue
+        if current_region is not None:
+            if stripped and not stripped.startswith("**") \
+                    and not stripped.startswith("🚨") \
+                    and not stripped.startswith("✈"):
+                for city in stripped.split(","):
+                    city = city.strip()
+                    city = re.sub(r'\s*\(\*\*.*?\*\*\)', '', city).strip()
+                    if city and len(city) > 1:
+                        result[current_region].append(city)
+            current_region = None   # cities only on the line immediately after header
+    return result
+
+
+# ─── Flash conversion tracking ───────────────────────────────────────────────
+
+def check_flash_conversion(
+    data: dict, alert_time: datetime,
+    alert_cities: list[str], alert_regions: list[str],
+) -> None:
+    """
+    Check if this incoming alert was predicted by a recent flash warning.
+    Matched flash entries are consumed (removed from pending_flash).
+    Expired entries (>1 h) are counted as not_converted.
+    """
+    if alert_time.tzinfo is None:
+        alert_time = alert_time.replace(tzinfo=timezone.utc)
+
+    ac = set(alert_cities)
+    ar = set(alert_regions)
+    fc = data.setdefault("flash_conversion", _FRESH_FLASH_CONVERSION())
+    remaining: list[dict] = []
+
+    for pf in data.get("pending_flash", []):
+        pf_time = datetime.fromisoformat(pf["time"])
+        if pf_time.tzinfo is None:
+            pf_time = pf_time.replace(tzinfo=timezone.utc)
+        diff_sec = (alert_time - pf_time).total_seconds()
+
+        if diff_sec < 0:
+            remaining.append(pf)
+            continue
+        if diff_sec > 3600:
+            fc["not_converted"] = fc.get("not_converted", 0) + 1
+            continue
+
+        pf_cities  = set(pf.get("cities",  []))
+        pf_regions = set(pf.get("regions", []))
+        if (pf_cities & ac) or (pf_regions & ar):
+            fc["converted"]         = fc.get("converted", 0) + 1
+            fc["total_gap_seconds"] = fc.get("total_gap_seconds", 0) + diff_sec
+            fc["count_with_gap"]    = fc.get("count_with_gap", 0) + 1
+            # consumed — don't re-add to remaining
+        else:
+            remaining.append(pf)
+
+    data["pending_flash"] = remaining
+
+
 # ─── Shelter time tracking ────────────────────────────────────────────────────
 
 def resolve_shelter(data: dict, end_time: datetime, end_info: dict) -> None:
@@ -162,8 +253,8 @@ def resolve_shelter(data: dict, end_time: datetime, end_info: dict) -> None:
     if end_time.tzinfo is None:
         end_time = end_time.replace(tzinfo=timezone.utc)
 
-    matched   = []          # pending entries to remove
-    city_earliest: dict[str, datetime] = {}  # city → earliest alert start
+    matched   = []
+    city_earliest: dict[str, datetime] = {}
 
     for p in pending:
         start = datetime.fromisoformat(p["start"])
@@ -171,22 +262,21 @@ def resolve_shelter(data: dict, end_time: datetime, end_info: dict) -> None:
             start = start.replace(tzinfo=timezone.utc)
         diff_min = (end_time - start).total_seconds() / 60
         if not (0 < diff_min <= 240):
-            continue  # out of window
+            continue
 
         p_cities  = set(p.get("cities",  []))
         p_regions = set(p.get("regions", []))
         p_type    = p.get("type", "rocket")
 
-        # Determine which cities from this pending entry are matched
-        if end_cities:                          # best: city-level match
+        if end_cities:
             hit_cities = p_cities & end_cities
             if not hit_cities:
                 continue
-        elif end_regions:                       # fallback: region-level match
+        elif end_regions:
             if not (p_regions & end_regions):
                 continue
             hit_cities = p_cities
-        else:                                   # last resort: type match
+        else:
             if p_type != end_type:
                 continue
             hit_cities = p_cities
@@ -196,10 +286,24 @@ def resolve_shelter(data: dict, end_time: datetime, end_info: dict) -> None:
                 city_earliest[city] = start
         matched.append(p)
 
-    # Add shelter duration per city (one entry per city, from its earliest alert)
+    # Add shelter duration per city
     for city, earliest in city_earliest.items():
         duration = max(10, int((end_time - earliest).total_seconds() / 60))
         data["shelter_minutes"][city] = data["shelter_minutes"].get(city, 0) + duration
+
+    # Record resolved event in event_log (overall duration = end - earliest start)
+    if city_earliest:
+        overall_start    = min(city_earliest.values())
+        overall_duration = max(10, int((end_time - overall_start).total_seconds() / 60))
+        event_log = data.setdefault("event_log", [])
+        event_log.insert(0, {
+            "date":         end_time.isoformat(),
+            "type":         end_type,
+            "duration_min": overall_duration,
+            "cities":       list(city_earliest.keys()),
+            "regions":      end_info.get("regions", []),
+        })
+        data["event_log"] = event_log[:500]
 
     for p in matched:
         pending.remove(p)
@@ -220,6 +324,19 @@ def expire_old_pending(data: dict) -> None:
         else:
             remaining.append(p)
     data["pending_shelter"] = remaining
+
+    # Expire old pending_flash entries → not_converted
+    fc = data.setdefault("flash_conversion", _FRESH_FLASH_CONVERSION())
+    flash_remaining = []
+    for pf in data.get("pending_flash", []):
+        pf_time = datetime.fromisoformat(pf["time"])
+        if pf_time.tzinfo is None:
+            pf_time = pf_time.replace(tzinfo=timezone.utc)
+        if (now - pf_time).total_seconds() > 3600:
+            fc["not_converted"] = fc.get("not_converted", 0) + 1
+        else:
+            flash_remaining.append(pf)
+    data["pending_flash"] = flash_remaining
 
 
 # ─── Main collector ───────────────────────────────────────────────────────────
@@ -283,6 +400,12 @@ async def collect() -> None:
                     data["flash_regions"][r] = data["flash_regions"].get(r, 0) + 1
                 for c in cities:
                     data["flash_cities"][c] = data["flash_cities"].get(c, 0) + 1
+                # Add to pending_flash for conversion tracking
+                data.setdefault("pending_flash", []).append({
+                    "time":    msg_time.isoformat(),
+                    "cities":  cities,
+                    "regions": regions,
+                })
                 data["recent"].insert(0, {
                     "id": msg.id, "date": msg.date.isoformat(),
                     "text": text[:300], "regions": regions, "cities": cities,
@@ -319,6 +442,22 @@ async def collect() -> None:
                 data["drone_regions"][r] = data["drone_regions"].get(r, 0) + 1
             for c in cities:
                 data["drone_cities"][c] = data["drone_cities"].get(c, 0) + 1
+
+        # Update city_by_region (preserves region → city grouping from message)
+        rc_map = extract_regions_with_cities(text)
+        cbr = data.setdefault("city_by_region", {})
+        for region, rcities in rc_map.items():
+            cbr.setdefault(region, {})
+            for city in rcities:
+                cbr[region][city] = cbr[region].get(city, 0) + 1
+
+        # Update hourly_counts (Israel time)
+        hour_str = str(msg_time.astimezone(IST).hour)
+        hc = data.setdefault("hourly_counts", {str(h): 0 for h in range(24)})
+        hc[hour_str] = hc.get(hour_str, 0) + 1
+
+        # Check if this alert was predicted by a recent flash warning
+        check_flash_conversion(data, msg_time, cities, regions)
 
         # Queue for shelter-time matching against future event-end messages
         data["pending_shelter"].append({

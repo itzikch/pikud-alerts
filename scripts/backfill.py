@@ -9,7 +9,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from telethon import TelegramClient
@@ -23,6 +23,9 @@ BACKFILL_FROM = os.environ.get("BACKFILL_FROM", "2026-02-27")
 
 CHANNEL   = "@PikudHaOref_all"
 DATA_FILE = Path(__file__).parent.parent / "docs" / "data.json"
+
+# Israel Standard Time (UTC+2)
+IST = timezone(timedelta(hours=2))
 
 REGIONS = [
     "אזור שומרון", "אזור השפלה", "אזור יהודה", "אזור לכיש",
@@ -84,16 +87,44 @@ def extract_cities(text: str) -> list[str]:
             next_is_city_line = False
     return list(dict.fromkeys(cities))
 
+def extract_regions_with_cities(text: str) -> dict:
+    """Returns {region_name: [city1, city2, ...]} preserving region→city grouping."""
+    result: dict[str, list[str]] = {}
+    lines = text.split("\n")
+    current_region: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"\*\*אזור .+\*\*", stripped):
+            region_name = stripped.strip("*").strip()
+            if region_name in REGIONS:
+                current_region = region_name
+                result.setdefault(current_region, [])
+            else:
+                current_region = None
+            continue
+        if current_region is not None:
+            if stripped and not stripped.startswith("**") \
+                    and not stripped.startswith("🚨") \
+                    and not stripped.startswith("✈"):
+                for city in stripped.split(","):
+                    city = city.strip()
+                    city = re.sub(r'\s*\(\*\*.*?\*\*\)', '', city).strip()
+                    if city and len(city) > 1:
+                        result[current_region].append(city)
+            current_region = None
+    return result
+
 
 def resolve_shelter_backfill(
     pending: list[dict],
     shelter_minutes: dict,
+    event_log: list,
     end_time: datetime,
     end_info: dict,
 ) -> None:
     """
-    Same logic as collect.py resolve_shelter but operates on a local pending list
-    (backfill has all messages at once so no cross-run persistence needed).
+    Same logic as collect.py resolve_shelter but operates on a local pending list.
+    Also writes resolved events to event_log.
     """
     end_cities  = set(end_info.get("cities",  []))
     end_regions = set(end_info.get("regions", []))
@@ -139,6 +170,17 @@ def resolve_shelter_backfill(
         duration = max(10, int((end_time - earliest).total_seconds() / 60))
         shelter_minutes[city] = shelter_minutes.get(city, 0) + duration
 
+    if city_earliest:
+        overall_start    = min(city_earliest.values())
+        overall_duration = max(10, int((end_time - overall_start).total_seconds() / 60))
+        event_log.insert(0, {
+            "date":         end_time.isoformat(),
+            "type":         end_type,
+            "duration_min": overall_duration,
+            "cities":       list(city_earliest.keys()),
+            "regions":      end_info.get("regions", []),
+        })
+
     for p in matched:
         pending.remove(p)
 
@@ -154,6 +196,14 @@ async def backfill() -> None:
         "drone_alerts": 0, "drone_regions": {}, "drone_cities": {},
         "flash_warnings": 0, "flash_regions": {}, "flash_cities": {},
         "shelter_minutes": {}, "pending_shelter": [],
+        "city_by_region": {},
+        "event_log": [],
+        "flash_conversion": {
+            "converted": 0, "not_converted": 0,
+            "total_gap_seconds": 0, "count_with_gap": 0,
+        },
+        "pending_flash": [],
+        "hourly_counts": {str(h): 0 for h in range(24)},
         "daily": {}, "recent": [],
     }
 
@@ -186,8 +236,11 @@ async def backfill() -> None:
     print(f"Total messages fetched: {len(messages)}")
 
     new_alerts = new_flashes = 0
-    # Local pending shelter list for backfill matching
+    # Local pending lists for backfill matching
     pending_shelter: list[dict] = []
+    pending_flash:   list[dict] = []
+    event_log:       list[dict] = []
+    fc = data["flash_conversion"]
 
     for msg in messages:  # chronological (oldest first)
         text     = msg.text or ""
@@ -197,7 +250,10 @@ async def backfill() -> None:
         # ── 1. Event-ended → resolve shelter ─────────────────────────────────
         end_info = parse_event_end(text)
         if end_info:
-            resolve_shelter_backfill(pending_shelter, data["shelter_minutes"], msg_time, end_info)
+            resolve_shelter_backfill(
+                pending_shelter, data["shelter_minutes"], event_log,
+                msg_time, end_info,
+            )
             continue
 
         # ── 2. Flash pre-warning (מבזק) ───────────────────────────────────────
@@ -211,6 +267,11 @@ async def backfill() -> None:
                     data["flash_regions"][r] = data["flash_regions"].get(r, 0) + 1
                 for c in cities:
                     data["flash_cities"][c] = data["flash_cities"].get(c, 0) + 1
+                pending_flash.append({
+                    "time":    msg_time.isoformat(),
+                    "cities":  cities,
+                    "regions": regions,
+                })
                 data["recent"].insert(0, {
                     "id": msg.id, "date": msg.date.isoformat(),
                     "text": text[:300], "regions": regions, "cities": cities,
@@ -248,6 +309,43 @@ async def backfill() -> None:
             for c in cities:
                 data["drone_cities"][c] = data["drone_cities"].get(c, 0) + 1
 
+        # Update city_by_region
+        rc_map = extract_regions_with_cities(text)
+        cbr = data["city_by_region"]
+        for region, rcities in rc_map.items():
+            cbr.setdefault(region, {})
+            for city in rcities:
+                cbr[region][city] = cbr[region].get(city, 0) + 1
+
+        # Update hourly_counts (Israel time)
+        hour_str = str(msg_time.astimezone(IST).hour)
+        data["hourly_counts"][hour_str] = data["hourly_counts"].get(hour_str, 0) + 1
+
+        # Check flash conversion: did a flash warning predict this alert?
+        ac = set(cities)
+        ar = set(regions)
+        remaining_flash: list[dict] = []
+        for pf in pending_flash:
+            pf_time = datetime.fromisoformat(pf["time"])
+            if pf_time.tzinfo is None:
+                pf_time = pf_time.replace(tzinfo=timezone.utc)
+            diff_sec = (msg_time - pf_time).total_seconds()
+            if diff_sec < 0:
+                remaining_flash.append(pf)
+                continue
+            if diff_sec > 3600:
+                fc["not_converted"] += 1
+                continue
+            pf_cities  = set(pf.get("cities",  []))
+            pf_regions = set(pf.get("regions", []))
+            if (pf_cities & ac) or (pf_regions & ar):
+                fc["converted"]         += 1
+                fc["total_gap_seconds"] += diff_sec
+                fc["count_with_gap"]    += 1
+            else:
+                remaining_flash.append(pf)
+        pending_flash = remaining_flash
+
         pending_shelter.append({
             "start":   msg_time.isoformat(),
             "cities":  cities,
@@ -261,12 +359,18 @@ async def backfill() -> None:
             "type": a_type,
         })
 
-    # Any unmatched pending alerts → default 10 min each
+    # Any unmatched pending_shelter → default 10 min each
     for p in pending_shelter:
         for city in p.get("cities", []):
             data["shelter_minutes"][city] = data["shelter_minutes"].get(city, 0) + 10
 
+    # Any remaining pending_flash → not_converted
+    fc["not_converted"] += len(pending_flash)
+
+    # Cap event_log at 500
+    data["event_log"]       = event_log[:500]
     data["pending_shelter"] = []
+    data["pending_flash"]   = []
     data["recent"]          = data["recent"][:100]
     data["last_updated"]    = datetime.now(timezone.utc).isoformat()
 
@@ -275,9 +379,13 @@ async def backfill() -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
     total_shelter_h = sum(data["shelter_minutes"].values()) / 60
+    conv_rate = (
+        fc["converted"] / (fc["converted"] + fc["not_converted"]) * 100
+        if (fc["converted"] + fc["not_converted"]) > 0 else 0
+    )
     print(
         f"Done — {new_alerts} alerts, {data['drone_alerts']} drones, "
-        f"{new_flashes} flash warnings, "
+        f"{new_flashes} flash warnings ({conv_rate:.0f}% conversion rate), "
         f"last_message_id={data['last_message_id']}, "
         f"days={len(data['daily'])}, "
         f"total shelter time={total_shelter_h:.0f}h across all cities"

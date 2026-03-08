@@ -480,6 +480,91 @@
       color: var(--text) !important;
       border-radius: 6px !important;
     }
+
+    /* ── Live banner ── */
+    .live-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .live-banner.critical { background: #f8514920; border-bottom: 2px solid #f85149; color: #f85149; }
+    .live-banner.warning  { background: #e3b34120; border-bottom: 2px solid #e3b341; color: #e3b341; }
+    .live-banner .live-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: currentColor; flex-shrink: 0;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+    /* ── Drill-down modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.65); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 28px; width: min(640px, 94vw);
+      max-height: 85vh; overflow-y: auto; position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none; color: var(--text-muted);
+      font-size: 20px; cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-box h2 { margin: 0 0 16px; font-size: 18px; }
+    .modal-box h3 { font-size: 14px; color: var(--text-muted); margin: 16px 0 8px; }
+    .city-tag {
+      display: inline-block; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 3px 10px; font-size: 12px; margin: 2px;
+      direction: rtl;
+    }
+
+    /* ── Schematic map ── */
+    .map-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .map-cell {
+      border-radius: 8px; padding: 10px 6px; text-align: center;
+      cursor: pointer; min-height: 64px;
+      display: flex; flex-direction: column; justify-content: center;
+      font-size: 11px; transition: transform 0.12s, box-shadow 0.12s;
+      color: #fff;
+    }
+    .map-cell:hover { transform: scale(1.06); box-shadow: 0 0 10px rgba(0,0,0,.4); }
+    .map-cell .cell-count { font-size: 20px; font-weight: 700; }
+    .map-cell .cell-name  { opacity: .85; margin-top: 2px; line-height: 1.2; }
+    .map-cell.empty-cell  { background: transparent !important; cursor: default; }
+    .map-cell.empty-cell:hover { transform: none; box-shadow: none; }
+    .map-legend { display: flex; align-items: center; gap: 8px; margin: 14px auto 0; max-width: 400px; }
+    .map-legend-bar {
+      flex: 1; height: 10px; border-radius: 5px;
+      background: linear-gradient(to right, #162031, #f85149);
+    }
+    .map-legend-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+    /* ── CSV export button ── */
+    .export-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text-muted); cursor: pointer; font-size: 12px;
+      padding: 4px 12px; margin-left: 8px; transition: all .15s;
+    }
+    .export-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── Duration chart ── */
+    .donut-wrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+    .donut-wrap canvas { max-width: 200px; max-height: 200px; }
+    .donut-legend { display: flex; flex-direction: column; gap: 8px; }
+    .donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .donut-legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -509,7 +594,14 @@
   <button data-tab="trends">📈 Trends</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
+  <button data-tab="map">🗺️ Map</button>
 </nav>
+
+<!-- Live situation banner -->
+<div id="liveBanner" class="live-banner critical">
+  <div class="live-dot"></div>
+  <span id="liveBannerText"></span>
+</div>
 
 <div class="range-bar">
   <span class="range-label">Time Range:</span>
@@ -569,7 +661,7 @@
   <!-- ===== BY REGION ===== -->
   <div id="tab-byregion" class="tab-content">
     <div class="chart-card">
-      <h2>Total Alerts by Region</h2>
+      <h2>Total Alerts by Region <button class="export-btn" onclick="exportRegionsCSV()">⬇️ Export CSV</button></h2>
       <div class="chart-wrap-tall">
         <canvas id="chartByRegion"></canvas>
       </div>
@@ -604,7 +696,7 @@
     </div>
 
     <div class="chart-card">
-      <h2>All Cities</h2>
+      <h2>All Cities <button class="export-btn" onclick="exportCitiesCSV()">⬇️ Export CSV</button></h2>
       <input
         type="text"
         id="citySearch"
@@ -652,6 +744,17 @@
         <canvas id="chartByDow"></canvas>
       </div>
     </div>
+
+    <div class="chart-card">
+      <h2>🌙 Night vs. Day Breakdown</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 16px">
+        Night = 22:00–05:59 Israel time. Based on all-time hourly data.
+      </p>
+      <div class="donut-wrap">
+        <canvas id="chartNightDay" width="200" height="200"></canvas>
+        <div class="donut-legend" id="nightDayLegend"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== SHELTER TIME ===== -->
@@ -666,7 +769,7 @@
     </div>
 
     <div class="chart-card">
-      <h2>All Cities — Shelter Time</h2>
+      <h2>All Cities — Shelter Time <button class="export-btn" onclick="exportShelterCSV()">⬇️ Export CSV</button></h2>
       <input type="text" id="shelterSearch" class="city-search" placeholder="Search city…" oninput="filterShelterTable()" />
       <div style="overflow-x:auto;">
         <table class="alerts-table" id="shelterTable">
@@ -786,7 +889,37 @@
     </div>
   </div>
 
+  <!-- ===== MAP ===== -->
+  <div id="tab-map" class="tab-content">
+    <div class="chart-card">
+      <h2>🗺️ Alert Intensity Map — Schematic View</h2>
+      <p style="color:var(--text-muted);font-size:13px;margin:-8px 0 16px">
+        Regions positioned roughly geographically (North → South, West → East).
+        Color intensity = total alert count. Click any region to drill down.
+      </p>
+      <div class="stats-grid" id="mapStatsGrid"></div>
+      <div class="map-grid" id="regionMapGrid" style="margin-top:20px"></div>
+      <div class="map-legend">
+        <span class="map-legend-label">0 alerts</span>
+        <div class="map-legend-bar"></div>
+        <span class="map-legend-label">Max alerts</span>
+      </div>
+    </div>
+  </div>
+
 </main>
+
+<!-- ===== DRILL-DOWN MODAL ===== -->
+<div id="drillModal" class="modal-overlay" onclick="closeDrillDown()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeDrillDown()">✕</button>
+    <h2 id="drillTitle"></h2>
+    <div class="stats-grid" id="drillStats" style="margin-bottom:16px"></div>
+    <canvas id="drillChart" height="140"></canvas>
+    <h3>Cities in this region</h3>
+    <div id="drillCities" style="line-height:2"></div>
+  </div>
+</div>
 
 <script>
   // ─── Data ──────────────────────────────────────────────────────────────────
@@ -801,6 +934,40 @@
     "אזור מערב הנגב","אזור המפרץ","אזור ירושלים","אזור מערב לכיש",
     "אזור מרכז הנגב","אזור מנשה","אזור עוטף עזה","אזור גולן צפון",
     "אזור ערבה","אזור אילת"
+  ];
+
+  // ─── Schematic map layout (row 1–11, col 1–4, N→S / W→E) ───────────────────
+  const REGION_MAP = [
+    { region: "אזור קו העימות",    row: 1, col: 2, label: "Confront. Line" },
+    { region: "אזור גולן צפון",    row: 1, col: 4, label: "N. Golan" },
+    { region: "אזור גליל עליון",   row: 2, col: 1, label: "Upper Galilee" },
+    { region: "אזור מרכז הגליל",  row: 2, col: 2, label: "Central Galilee" },
+    { region: "אזור גולן דרום",    row: 2, col: 4, label: "S. Golan" },
+    { region: "אזור המפרץ",        row: 3, col: 1, label: "Bay (Haifa)" },
+    { region: "אזור הכרמל",        row: 3, col: 2, label: "Carmel" },
+    { region: "אזור גליל תחתון",   row: 3, col: 3, label: "Lower Galilee" },
+    { region: "אזור בקעת בית שאן", row: 3, col: 4, label: "Beit Shean" },
+    { region: "אזור ואדי ערה",     row: 4, col: 1, label: "Wadi Ara" },
+    { region: "אזור מנשה",         row: 4, col: 2, label: "Menashe" },
+    { region: "אזור העמקים",       row: 4, col: 3, label: "Valleys" },
+    { region: "אזור שרון",         row: 5, col: 1, label: "Sharon" },
+    { region: "אזור ירקון",        row: 5, col: 2, label: "Yarkon" },
+    { region: "אזור שומרון",       row: 5, col: 3, label: "Samaria" },
+    { region: "אזור בקעה",         row: 5, col: 4, label: "Jordan Valley" },
+    { region: "אזור דן",           row: 6, col: 1, label: "Dan (Tel Aviv)" },
+    { region: "אזור השפלה",        row: 6, col: 2, label: "Shephelah" },
+    { region: "אזור ירושלים",      row: 6, col: 3, label: "Jerusalem" },
+    { region: "אזור ים המלח",      row: 6, col: 4, label: "Dead Sea" },
+    { region: "אזור שפלת יהודה",   row: 7, col: 2, label: "Judean Lowlands" },
+    { region: "אזור יהודה",        row: 7, col: 3, label: "Judea" },
+    { region: "אזור לכיש",         row: 8, col: 2, label: "Lachish" },
+    { region: "אזור מערב לכיש",    row: 8, col: 1, label: "W. Lachish" },
+    { region: "אזור עוטף עזה",     row: 9, col: 1, label: "Gaza Envelope" },
+    { region: "אזור מערב הנגב",    row: 9, col: 2, label: "W. Negev" },
+    { region: "אזור מרכז הנגב",    row: 9, col: 3, label: "Central Negev" },
+    { region: "אזור דרום הנגב",    row: 10, col: 3, label: "S. Negev" },
+    { region: "אזור ערבה",         row: 10, col: 4, label: "Arava" },
+    { region: "אזור אילת",         row: 11, col: 3, label: "Eilat" },
   ];
 
   const CHART_DEFAULTS = {
@@ -823,6 +990,23 @@
   Chart.defaults.color = '#8b949e';
   Chart.defaults.borderColor = '#30363d';
 
+  // ─── URL hash routing ──────────────────────────────────────────────────────
+  function getHashParams() {
+    const params = {};
+    window.location.hash.slice(1).split('&').forEach(p => {
+      const [k, v] = p.split('=');
+      if (k && v !== undefined) params[k] = decodeURIComponent(v);
+    });
+    return params;
+  }
+
+  function setHashParam(key, value) {
+    const params = getHashParams();
+    params[key] = value;
+    const hash = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    history.replaceState(null, '', '#' + hash);
+  }
+
   // ─── Tabs ──────────────────────────────────────────────────────────────────
   document.querySelectorAll('nav button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -830,6 +1014,7 @@
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      setHashParam('tab', btn.dataset.tab);
     });
   });
 
@@ -909,6 +1094,7 @@
       ACTIVE_DAYS = parseInt(btn.dataset.days);
       CUSTOM_RANGE = null;
       localStorage.setItem('pikud-range', ACTIVE_DAYS);
+      setHashParam('range', ACTIVE_DAYS);
       document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       // Clear custom inputs
@@ -936,23 +1122,78 @@
   }
 
   // ─── Render functions ──────────────────────────────────────────────────────
-  function renderStats() {
-    const regions = DATA.regions || {};
-    const topRegion = Object.entries(regions).sort((a, b) => b[1] - a[1])[0];
-    const days = Object.keys(DATA.daily || {}).sort();
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const todayAlerts = days.includes(todayStr)
-      ? Object.values(DATA.daily[todayStr] || {}).reduce((s, v) => s + v, 0)
-      : 0;
+  // ─── Streak computation (Feature 5) ──────────────────────────────────────
+  function computeStreaks() {
+    const daily = DATA.daily || {};
+    const allDays = Object.keys(daily).sort();
+    if (!allDays.length) return { current: 0, longest: 0, lastQuiet: null, longestQuiet: 0 };
 
+    const activeDays = new Set(allDays.filter(d =>
+      Object.values(daily[d] || {}).some(v => v > 0)
+    ));
+
+    // Current active streak (days in a row ending today/yesterday)
+    let currentStreak = 0;
+    const d = new Date();
+    for (let i = 0; i < 365; i++) {
+      const ds = d.toISOString().slice(0, 10);
+      if (activeDays.has(ds)) { currentStreak++; d.setDate(d.getDate() - 1); }
+      else break;
+    }
+
+    // Longest streak & quiet period
+    let longest = 0, cur = 0, longestQuiet = 0, curQuiet = 0, lastQuiet = null;
+    const iter = new Date(allDays[0]);
+    const last  = new Date();
+    while (iter <= last) {
+      const ds = iter.toISOString().slice(0, 10);
+      if (activeDays.has(ds)) {
+        cur++; longest = Math.max(longest, cur); curQuiet = 0;
+      } else {
+        curQuiet++; longestQuiet = Math.max(longestQuiet, curQuiet); lastQuiet = ds; cur = 0;
+      }
+      iter.setDate(iter.getDate() + 1);
+    }
+    return { current: currentStreak, longest, lastQuiet, longestQuiet };
+  }
+
+  function renderStats() {
+    const daily   = DATA.daily || {};
+    const regions = DATA.regions || {};
+
+    // Range-filtered totals
+    const activeDays = getActiveDays();
+    let rangeAlerts = 0;
+    const rangeRegionCounts = {};
+    for (const day of activeDays) {
+      const dayData = daily[day] || {};
+      for (const [r, v] of Object.entries(dayData)) {
+        rangeAlerts += v;
+        rangeRegionCounts[r] = (rangeRegionCounts[r] || 0) + v;
+      }
+    }
+    const rangeTopRegion = Object.entries(rangeRegionCounts).sort((a, b) => b[1] - a[1])[0];
+    const rangeRegionsAffected = Object.values(rangeRegionCounts).filter(v => v > 0).length;
+
+    const todayStr    = new Date().toISOString().slice(0, 10);
+    const todayAlerts = Object.values(daily[todayStr] || {}).reduce((s, v) => s + v, 0);
+
+    // Streaks
+    const streaks = computeStreaks();
+
+    const rangeLabel = getRangeLabel();
     const cards = [
-      { value: DATA.total_alerts ?? 0, label: 'Total Alerts' },
-      { value: todayAlerts, label: 'Today' },
-      { value: REGIONS.filter(r => (regions[r] || 0) > 0).length, label: 'Regions Affected' },
-      { value: topRegion ? topRegion[1] : 0, label: `Most Hit: ${topRegion ? topRegion[0] : '—'}` },
-      { value: DATA.drone_alerts ?? 0, label: '✈️ Drone Alerts' },
-      { value: (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0), label: '🚀 Rocket / Missile Alerts' },
-      { value: DATA.flash_warnings ?? 0, label: '⚡ Flash Warnings (מבזק)' },
+      { value: rangeAlerts,            label: `Total Alerts (${rangeLabel})` },
+      { value: todayAlerts,            label: 'Today' },
+      { value: rangeRegionsAffected,   label: `Regions Hit (${rangeLabel})` },
+      { value: rangeTopRegion ? rangeTopRegion[1] : 0,
+        label: `Most Hit: ${rangeTopRegion ? rangeTopRegion[0] : '—'}` },
+      { value: DATA.drone_alerts ?? 0, label: '✈️ Drone Alerts (All Time)' },
+      { value: (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0), label: '🚀 Rocket / Missile (All Time)' },
+      { value: DATA.flash_warnings ?? 0, label: '⚡ Flash Warnings (All Time)' },
+      { value: streaks.current,        label: '🔥 Current Active Streak (days)' },
+      { value: streaks.longest,        label: '📈 Longest Active Streak (days)' },
+      { value: streaks.longestQuiet,   label: '🕊️ Longest Quiet Period (days)' },
     ];
 
     document.getElementById('statsGrid').innerHTML = cards.map(c => `
@@ -961,6 +1202,27 @@
         <div class="label">${c.label}</div>
       </div>
     `).join('');
+  }
+
+  // ─── Live banner (Feature 4) ──────────────────────────────────────────────
+  function renderLiveBanner() {
+    const recent = (DATA.recent || []).filter(a => a.type !== 'flash');
+    const banner = document.getElementById('liveBanner');
+    const text   = document.getElementById('liveBannerText');
+    if (!recent.length || !banner) return;
+
+    const lastAlert = recent[0];
+    const diffMin   = Math.round((Date.now() - new Date(lastAlert.date)) / 60000);
+
+    if (diffMin < 120) {
+      const regStr = (lastAlert.regions || []).slice(0, 3).join(', ');
+      const typeIcon = lastAlert.type === 'drone' ? '✈️' : '🚀';
+      text.innerHTML = `${typeIcon} Active situation — last ${lastAlert.type} alert <b>${diffMin < 1 ? 'just now' : diffMin + ' min ago'}</b> · ${regStr}`;
+      banner.className = 'live-banner ' + (diffMin < 30 ? 'critical' : 'warning');
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
   }
 
   function renderDailyChart() {
@@ -1036,6 +1298,15 @@
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        onClick: (evt, elements) => {
+          if (elements.length) openDrillDown(sorted[elements[0].index]);
+        },
+        plugins: {
+          ...CHART_DEFAULTS.plugins,
+          tooltip: { ...CHART_DEFAULTS.plugins.tooltip,
+            callbacks: { footer: () => 'Click to drill down' }
+          }
+        }
       }
     });
 
@@ -1322,6 +1593,49 @@
         }
       }
     });
+
+    // ── Night vs Day donut (Feature 8) ─────────────────────────────────────
+    // Use all-time hourly_counts from Python (Israel time) if available, else recent
+    const hc = DATA.hourly_counts || {};
+    let nightCount = 0, dayCount = 0;
+    const hasAllTime = Object.values(hc).some(v => v > 0);
+    if (hasAllTime) {
+      for (let h = 0; h < 24; h++) {
+        const n = hc[String(h)] || 0;
+        if (h >= 22 || h < 6) nightCount += n; else dayCount += n;
+      }
+    } else {
+      // Fallback: use recent list with approximate +2h UTC→IST conversion
+      recent.forEach(a => {
+        if (!a.date || a.type === 'flash') return;
+        const h = (new Date(a.date).getUTCHours() + 2) % 24;
+        if (h >= 22 || h < 6) nightCount++; else dayCount++;
+      });
+    }
+    const total = nightCount + dayCount || 1;
+    const nightPct = ((nightCount / total) * 100).toFixed(1);
+    const dayPct   = ((dayCount   / total) * 100).toFixed(1);
+
+    destroyChart('chartNightDay');
+    new Chart(document.getElementById('chartNightDay'), {
+      type: 'doughnut',
+      data: {
+        labels: ['🌙 Night (22:00–06:00)', '☀️ Day (06:00–22:00)'],
+        datasets: [{ data: [nightCount, dayCount], backgroundColor: ['#388bfd', '#e3b341'], borderWidth: 0 }]
+      },
+      options: {
+        responsive: false, cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.parsed} alerts (${((ctx.parsed/total)*100).toFixed(1)}%)` } }
+        }
+      }
+    });
+    document.getElementById('nightDayLegend').innerHTML = `
+      <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#388bfd"></div>🌙 Night: ${nightCount} (${nightPct}%)</div>
+      <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#e3b341"></div>☀️ Day: ${dayCount} (${dayPct}%)</div>
+      <div style="margin-top:8px;color:var(--text-muted);font-size:11px">${hasAllTime ? 'All-time data (Israel time)' : 'Based on recent 100 alerts'}</div>
+    `;
   }
 
   // ─── Theme toggle ────────────────────────────────────────────────────────────
@@ -1331,7 +1645,7 @@
     document.getElementById('themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
     // Re-render charts so axis/grid colors update
     renderDailyChart(); renderByRegion(); renderRanking(); renderByCity();
-    renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
+    renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderMap(); renderWeeklyTrend(); renderCompare(); renderHeatmap();
   }
 
   // ─── Zone Status ─────────────────────────────────────────────────────────────
@@ -1586,6 +1900,15 @@
       ? ((flashTotal / (flashTotal + totalAlerts)) * 100).toFixed(1)
       : 0;
 
+    // Alert duration stats from event_log
+    const dur = getEventLogStats();
+    const durCards = dur ? `
+      <div class="stat-card"><div class="value">${dur.rocketAvg} min</div><div class="label">🚀 Avg Rocket Alert Duration</div></div>
+      <div class="stat-card"><div class="value">${dur.rocketMax} min</div><div class="label">🚀 Longest Rocket Alert</div></div>
+      <div class="stat-card"><div class="value">${dur.droneAvg} min</div><div class="label">✈️ Avg Drone Alert Duration</div></div>
+      <div class="stat-card"><div class="value">${dur.droneMax} min</div><div class="label">✈️ Longest Drone Alert</div></div>
+    ` : '';
+
     document.getElementById('flashStatsGrid').innerHTML = `
       <div class="stat-card">
         <div class="value">${flashTotal.toLocaleString()}</div>
@@ -1603,6 +1926,8 @@
         <div class="value">${topCity ? topCity[0] : '—'}</div>
         <div class="label">Most Warned City</div>
       </div>
+      ${flashConversionCards()}
+      ${durCards}
     `;
 
     if (flashTotal === 0) {
@@ -1657,6 +1982,161 @@
         }
       }
     });
+  }
+
+  // ─── Region drill-down modal (Feature 6) ─────────────────────────────────
+  function openDrillDown(region) {
+    document.getElementById('drillTitle').textContent = region;
+    document.getElementById('drillModal').style.display = 'flex';
+
+    const totalInRegion = (DATA.regions || {})[region] || 0;
+    const droneInRegion = (DATA.drone_regions || {})[region] || 0;
+    const flashInRegion = (DATA.flash_regions || {})[region] || 0;
+
+    document.getElementById('drillStats').innerHTML = `
+      <div class="stat-card"><div class="value">${totalInRegion}</div><div class="label">🚀 Total Alerts</div></div>
+      <div class="stat-card"><div class="value">${droneInRegion}</div><div class="label">✈️ Drone Alerts</div></div>
+      <div class="stat-card"><div class="value">${flashInRegion}</div><div class="label">⚡ Flash Warnings</div></div>
+    `;
+
+    // Mini daily trend
+    const days   = getActiveDays();
+    const counts = days.map(d => (DATA.daily?.[d]?.[region] || 0));
+    destroyChart('drillChart');
+    new Chart(document.getElementById('drillChart'), {
+      type: 'bar',
+      data: {
+        labels: days.map(d => d.slice(5)),
+        datasets: [{ data: counts, backgroundColor: 'rgba(248,81,73,0.7)', borderRadius: 3 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: CHART_DEFAULTS.plugins.tooltip },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Cities from city_by_region
+    const cityMap = (DATA.city_by_region || {})[region] || {};
+    const sorted  = Object.entries(cityMap).sort((a, b) => b[1] - a[1]);
+    document.getElementById('drillCities').innerHTML = sorted.length
+      ? sorted.map(([c, v]) => `<span class="city-tag">${c} <b style="color:var(--text)">${v}</b></span>`).join(' ')
+      : '<p style="color:var(--text-muted);font-size:13px">No city-level data yet — run Backfill workflow to populate.</p>';
+  }
+
+  function closeDrillDown() {
+    document.getElementById('drillModal').style.display = 'none';
+  }
+
+  // ─── Schematic map (Feature 7) ───────────────────────────────────────────
+  function renderMap() {
+    const regions  = DATA.regions || {};
+    const allVals  = REGIONS.map(r => regions[r] || 0);
+    const maxVal   = Math.max(...allVals, 1);
+
+    // Build 11×4 grid array
+    const ROWS = 11, COLS = 4;
+    const cells = Array(ROWS * COLS).fill(null);
+    for (const item of REGION_MAP) {
+      cells[(item.row - 1) * COLS + (item.col - 1)] = item;
+    }
+
+    const mapStatsGrid = document.getElementById('mapStatsGrid');
+    const topRegion = Object.entries(regions).sort((a, b) => b[1] - a[1])[0];
+    const quietCount = REGIONS.filter(r => !regions[r] || regions[r] === 0).length;
+    if (mapStatsGrid) {
+      mapStatsGrid.innerHTML = [
+        { value: Object.values(regions).filter(v => v > 0).length, label: 'Active Regions' },
+        { value: topRegion ? topRegion[1] : 0, label: `Most Alerts: ${topRegion ? topRegion[0].replace('אזור ', '') : '—'}` },
+        { value: quietCount, label: 'Never Alerted Regions' },
+      ].map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`).join('');
+    }
+
+    document.getElementById('regionMapGrid').innerHTML = cells.map(item => {
+      if (!item) return '<div class="map-cell empty-cell"></div>';
+      const count = regions[item.region] || 0;
+      const bg    = heatColor(count, maxVal);
+      return `
+        <div class="map-cell" style="background:${bg}"
+             onclick="openDrillDown('${item.region.replace(/'/g, "\\'")}')"
+             title="${item.region}: ${count} alerts">
+          <div class="cell-count">${count}</div>
+          <div class="cell-name">${item.label}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ─── Alert Duration stats (Feature 1) ───────────────────────────────────
+  // Displayed in Flash tab's stats cards
+  function getEventLogStats() {
+    const log = DATA.event_log || [];
+    if (!log.length) return null;
+    const rockets = log.filter(e => e.type === 'rocket').map(e => e.duration_min);
+    const drones  = log.filter(e => e.type === 'drone').map(e => e.duration_min);
+    const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+    const max = arr => arr.length ? Math.max(...arr) : 0;
+    return {
+      rocketAvg: avg(rockets), rocketMax: max(rockets), rocketCount: rockets.length,
+      droneAvg:  avg(drones),  droneMax:  max(drones),  droneCount: drones.length,
+    };
+  }
+
+  // ─── Flash conversion rate extra cards (appended in renderFlash) ─────────
+  function flashConversionCards() {
+    const fc = DATA.flash_conversion || {};
+    const converted    = fc.converted    || 0;
+    const notConverted = fc.not_converted || 0;
+    const total = converted + notConverted;
+    const rate  = total > 0 ? ((converted / total) * 100).toFixed(0) : '—';
+    const avgGap = fc.count_with_gap > 0
+      ? Math.round(fc.total_gap_seconds / fc.count_with_gap / 60)
+      : '—';
+    return `
+      <div class="stat-card"><div class="value">${rate}%</div><div class="label">⚡→🚀 Flash Conversion Rate</div></div>
+      <div class="stat-card"><div class="value">${typeof avgGap === 'number' ? avgGap + ' min' : '—'}</div><div class="label">Avg Flash → Alert Gap</div></div>
+      <div class="stat-card"><div class="value">${converted}</div><div class="label">Flashes that Led to Alert</div></div>
+      <div class="stat-card"><div class="value">${notConverted}</div><div class="label">Flashes with No Alert</div></div>
+    `;
+  }
+
+  // ─── CSV export helpers (Feature 10) ────────────────────────────────────
+  function downloadCSV(csvStr, filename) {
+    const bom  = '\uFEFF'; // UTF-8 BOM for Excel Hebrew support
+    const blob = new Blob([bom + csvStr], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCitiesCSV() {
+    const rows = [['City', 'Alerts', 'Drone Alerts', 'Shelter Minutes']];
+    const cities = Object.entries(DATA.cities || {}).sort((a, b) => b[1] - a[1]);
+    for (const [city, count] of cities) {
+      rows.push([city, count, (DATA.drone_cities || {})[city] || 0, (DATA.shelter_minutes || {})[city] || 0]);
+    }
+    downloadCSV(rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'pikud-cities.csv');
+  }
+
+  function exportRegionsCSV() {
+    const rows = [['Region', 'Total Alerts', 'Drone Alerts', 'Flash Warnings']];
+    const regions = Object.entries(DATA.regions || {}).sort((a, b) => b[1] - a[1]);
+    for (const [region, count] of regions) {
+      rows.push([region, count, (DATA.drone_regions || {})[region] || 0, (DATA.flash_regions || {})[region] || 0]);
+    }
+    downloadCSV(rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'pikud-regions.csv');
+  }
+
+  function exportShelterCSV() {
+    const rows = [['City', 'Shelter Minutes', 'Shelter Hours', 'Alerts', 'Drone Alerts']];
+    const shelter = Object.entries(DATA.shelter_minutes || {}).sort((a, b) => b[1] - a[1]);
+    for (const [city, min] of shelter) {
+      rows.push([city, min, (min / 60).toFixed(1), (DATA.cities || {})[city] || 0, (DATA.drone_cities || {})[city] || 0]);
+    }
+    downloadCSV(rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'pikud-shelter.csv');
   }
 
   function renderCompare() {
@@ -1888,7 +2368,30 @@
       if (btn) btn.textContent = '🌙 Dark';
     }
 
+    // Restore tab + range from URL hash (Feature 9)
+    const hashParams = getHashParams();
+    if (hashParams.tab) {
+      const tabBtn = document.querySelector(`nav button[data-tab="${hashParams.tab}"]`);
+      if (tabBtn) {
+        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        tabBtn.classList.add('active');
+        const tabEl = document.getElementById('tab-' + hashParams.tab);
+        if (tabEl) tabEl.classList.add('active');
+      }
+    }
+    if (hashParams.range && !CUSTOM_RANGE) {
+      const days = parseInt(hashParams.range);
+      if ([7, 14, 30, 60].includes(days)) {
+        ACTIVE_DAYS = days;
+        document.querySelectorAll('.range-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.days === hashParams.range);
+        });
+      }
+    }
+
     renderStats();
+    renderLiveBanner();
     renderZoneStatus();
     renderDailyChart();
     renderRecentTable();
@@ -1899,6 +2402,7 @@
     renderShelter();
     renderDrone();
     renderFlash();
+    renderMap();
     renderWeeklyTrend();
     renderCompare();
     renderHeatmap();
