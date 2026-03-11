@@ -1370,23 +1370,23 @@
     let hasDailyCounts = false;
     const rangeRegionCounts = {};
 
+    let missingDays = 0;
     for (const day of activeDays) {
-      // daily_counts gives unique message count (1 per alert, regardless of regions covered)
       if (dailyCounts[day] !== undefined) {
+        // Accurate: daily_counts counts unique messages, not region-multiplied
         rangeAlerts    += dailyCounts[day];
         hasDailyCounts  = true;
+      } else {
+        // Per-day fallback for pre-backfill days: use the MAX region count for that day.
+        // max(region counts) ≈ lower bound on unique messages (better than region-sum).
+        const dayVals = Object.values(daily[day] || {});
+        rangeAlerts += dayVals.length ? Math.max(...dayVals) : 0;
+        if (dayVals.length) missingDays++;
       }
       // Region counts used separately for "Regions Hit" and "Most Hit" cards
       for (const [r, v] of Object.entries(daily[day] || {})) {
         rangeRegionCounts[r] = (rangeRegionCounts[r] || 0) + v;
       }
-    }
-
-    // Fallback for old data that doesn't have daily_counts yet:
-    // use total_alerts (all-time) so the number is at least correct for all-time range
-    if (!hasDailyCounts) {
-      // Estimate from total_alerts proportionally — not perfect but consistent
-      rangeAlerts = DATA.total_alerts ?? 0;
     }
 
     const rangeTopRegion      = Object.entries(rangeRegionCounts).sort((a, b) => b[1] - a[1])[0];
@@ -1407,10 +1407,11 @@
     // Streaks
     const streaks    = computeStreaks();
     const rangeLabel = getRangeLabel();
-    const oldDataNote = hasDailyCounts ? '' : ' *';
+    // Show ~ if some days fell back to the max-region estimate (pre-backfill)
+    const rangeNote  = missingDays > 0 ? ' ~' : '';
 
     const cards = [
-      { value: rangeAlerts,          label: `🚨 Alert Events (${rangeLabel})${oldDataNote}` },
+      { value: rangeAlerts,          label: `🚨 Alert Events (${rangeLabel})${rangeNote}` },
       { value: todayAlerts,          label: 'Alert Events Today' },
       { value: rangeRegionsAffected, label: `Regions Hit (${rangeLabel})` },
       { value: rangeTopRegion ? rangeTopRegion[1] : 0,
@@ -1428,10 +1429,11 @@
         <div class="value">${typeof c.value === 'number' ? c.value.toLocaleString('en-US') : c.value}</div>
         <div class="label">${c.label}</div>
       </div>
-    `).join('') + (hasDailyCounts ? '' :
+    `).join('') + (missingDays > 0 ?
       `<p style="grid-column:1/-1;color:var(--text-muted);font-size:11px;margin-top:4px">
-        * Range alert count will be accurate after the next backfill run (data.json currently lacks daily_counts).
-      </p>`
+        ~ ${missingDays} day(s) in this range use an estimate (per-day max region count) because
+        historical data pre-dates the daily_counts field. Re-run the Backfill workflow for exact counts.
+      </p>` : ''
     );
   }
 
