@@ -471,6 +471,12 @@ async def collect() -> None:
         hc = data.setdefault("hourly_counts", {str(h): 0 for h in range(24)})
         hc[hour_str] = hc.get(hour_str, 0) + 1
 
+        # Update city_hourly_counts — {city: {hour: count}} in Israel time
+        chc = data.setdefault("city_hourly_counts", {})
+        for city in cities:
+            chc.setdefault(city, {})
+            chc[city][hour_str] = chc[city].get(hour_str, 0) + 1
+
         # Check if this alert was predicted by a recent flash warning
         check_flash_conversion(data, msg_time, cities, regions)
 

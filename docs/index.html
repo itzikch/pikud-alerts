@@ -794,6 +794,27 @@
         <div class="donut-legend" id="nightDayLegend"></div>
       </div>
     </div>
+
+    <!-- Per-city hourly breakdown -->
+    <div class="chart-card">
+      <h2>🏙️ When Does a Specific City Get Alerts?</h2>
+      <p style="color:#8b949e;font-size:13px;margin:-8px 0 12px">
+        Search for a city to see its hourly alert distribution compared to the national average.
+      </p>
+      <input type="text" id="cityHourSearch" class="city-search" placeholder="Type a city name…"
+        oninput="renderCityHour()" list="cityHourList" autocomplete="off" />
+      <datalist id="cityHourList"></datalist>
+      <div id="cityHourPanel" style="display:none;margin-top:14px">
+        <div class="stats-grid" id="cityHourStatsGrid" style="margin-bottom:14px"></div>
+        <div class="chart-wrap">
+          <canvas id="chartCityHour"></canvas>
+        </div>
+        <p id="cityHourFooter" style="color:#8b949e;font-size:12px;margin-top:10px;text-align:center"></p>
+      </div>
+      <div id="cityHourEmpty" style="color:#8b949e;font-size:13px;margin-top:12px;display:none">
+        No hourly data found for that city. Try a different spelling.
+      </div>
+    </div>
   </div>
 
   <!-- ===== SHELTER TIME ===== -->
@@ -1729,19 +1750,23 @@
 
   function renderByHour() {
     const recent = DATA.recent || [];
-    const hourCounts = Array(24).fill(0);
-    const dowCounts  = Array(7).fill(0); // 0=Sun … 6=Sat
 
-    recent.forEach(a => {
-      if (!a.date) return;
-      const d = new Date(a.date);
-      // Hour in Jerusalem timezone
-      const hour = parseInt(d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }).split(':')[0]);
-      if (hour >= 0 && hour < 24) hourCounts[hour]++;
-      // Day-of-week in Jerusalem timezone
-      const dow = new Date(d.toLocaleDateString('en-US', { timeZone: 'Asia/Jerusalem' })).getDay();
-      if (dow >= 0 && dow < 7) dowCounts[dow]++;
-    });
+    // ── All-time hourly distribution (Israel time, from Python) ──────────────
+    const hc = DATA.hourly_counts || {};
+    const hourCounts = Array.from({length: 24}, (_, i) => hc[String(i)] || 0);
+
+    // ── All-time DOW distribution from DATA.daily (full history) ─────────────
+    const dailyCounts = DATA.daily_counts || {};
+    const daily = DATA.daily || {};
+    const dowCounts = Array(7).fill(0);
+    for (const [date, regions] of Object.entries(daily)) {
+      const count = dailyCounts[date] !== undefined
+        ? dailyCounts[date]
+        : Math.max(...Object.values(regions), 0);
+      // Use noon local time to avoid DST boundary issues
+      const dow = new Date(date + 'T12:00:00').getDay();
+      if (dow >= 0 && dow < 7) dowCounts[dow] += count;
+    }
 
     const maxHour   = Math.max(...hourCounts);
     const peakHour  = hourCounts.indexOf(maxHour);
@@ -1950,6 +1975,112 @@
         : 'no alerts in last 7 days';
       pf.textContent = `Based on ${last7.length} alerts across the last 7 days (${dateRange}, Israel time). Probability = days with ≥1 alert at that hour ÷ 7.`;
     }
+
+    // Populate city-hour datalist
+    const chcData = DATA.city_hourly_counts || {};
+    const cityHourList = document.getElementById('cityHourList');
+    if (cityHourList) {
+      const cities = Object.keys(chcData).sort();
+      cityHourList.innerHTML = cities.map(c => `<option value="${c}">`).join('');
+    }
+  }
+
+  // ─── Per-city hourly breakdown ────────────────────────────────────────────────
+  function renderCityHour() {
+    const input   = document.getElementById('cityHourSearch');
+    const panel   = document.getElementById('cityHourPanel');
+    const empty   = document.getElementById('cityHourEmpty');
+    if (!input || !panel || !empty) return;
+
+    const query = input.value.trim();
+    if (!query) { panel.style.display = 'none'; empty.style.display = 'none'; return; }
+
+    const chcData = DATA.city_hourly_counts || {};
+    // Case-insensitive exact match first, then prefix match
+    const key = Object.keys(chcData).find(k => k === query)
+             || Object.keys(chcData).find(k => k.toLowerCase() === query.toLowerCase())
+             || Object.keys(chcData).find(k => k.startsWith(query));
+
+    if (!key) {
+      panel.style.display = 'none'; empty.style.display = 'block'; return;
+    }
+    panel.style.display = 'block'; empty.style.display = 'none';
+
+    const cityHours = chcData[key];
+    const cityTotal = Object.values(cityHours).reduce((a, b) => a + b, 0);
+    const cityCounts = Array.from({length: 24}, (_, i) => cityHours[String(i)] || 0);
+
+    // National hourly counts (all-time)
+    const hc = DATA.hourly_counts || {};
+    const natCounts  = Array.from({length: 24}, (_, i) => hc[String(i)] || 0);
+    const natTotal   = natCounts.reduce((a, b) => a + b, 0) || 1;
+
+    // Normalise: city % vs national %
+    const cityPct = cityCounts.map(v => cityTotal ? +((v / cityTotal) * 100).toFixed(1) : 0);
+    const natPct  = natCounts.map(v => +((v / natTotal) * 100).toFixed(1));
+
+    const peakHour  = cityCounts.indexOf(Math.max(...cityCounts));
+    const quietHour = cityCounts.indexOf(Math.min(...cityCounts));
+
+    document.getElementById('cityHourStatsGrid').innerHTML = [
+      { value: key,                                       label: 'City' },
+      { value: cityTotal,                                 label: 'Total alerts (all-time)' },
+      { value: `${String(peakHour).padStart(2,'0')}:00`, label: 'Peak hour (Israel time)' },
+      { value: `${String(quietHour).padStart(2,'0')}:00`,label: 'Quietest hour' },
+    ].map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`).join('');
+
+    const hourLabels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}:00`);
+    destroyChart('chartCityHour');
+    new Chart(document.getElementById('chartCityHour'), {
+      type: 'bar',
+      data: {
+        labels: hourLabels,
+        datasets: [
+          {
+            label: key,
+            data: cityPct,
+            backgroundColor: cityCounts.map((_, i) => i === peakHour ? '#f85149' : '#388bfd'),
+            borderRadius: 3,
+            order: 1,
+          },
+          {
+            label: 'National average',
+            data: natPct,
+            type: 'line',
+            borderColor: '#e3b341',
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.3,
+            order: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { labels: { color: '#8b949e', boxWidth: 14 } },
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.dataset.label === key
+                ? ` ${ctx.parsed.y}% of city alerts (${cityCounts[ctx.dataIndex]} alerts)`
+                : ` ${ctx.parsed.y}% of national alerts`,
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: '#21262d' } },
+          y: {
+            ticks: { color: '#8b949e', callback: v => v + '%' },
+            grid: { color: '#21262d' },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+
+    document.getElementById('cityHourFooter').textContent =
+      `${key}: ${cityTotal} alerts. Blue bars = share of city's own alerts. Yellow line = national hourly distribution.`;
   }
 
   // ─── Theme toggle ────────────────────────────────────────────────────────────

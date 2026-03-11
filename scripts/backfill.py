@@ -326,6 +326,12 @@ async def backfill() -> None:
         hour_str = str(msg_time.astimezone(IST).hour)
         data["hourly_counts"][hour_str] = data["hourly_counts"].get(hour_str, 0) + 1
 
+        # Update city_hourly_counts — {city: {hour: count}} in Israel time
+        chc = data.setdefault("city_hourly_counts", {})
+        for city in cities:
+            chc.setdefault(city, {})
+            chc[city][hour_str] = chc[city].get(hour_str, 0) + 1
+
         # Check flash conversion: did a flash warning predict this alert?
         ac = set(cities)
         ar = set(regions)
