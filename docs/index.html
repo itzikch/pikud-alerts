@@ -1975,11 +1975,10 @@
       pf.textContent = `Based on ${last7.length} alerts across the last 7 days (${dateRange}, Israel time). Probability = days with ≥1 alert at that hour ÷ 7.`;
     }
 
-    // Populate city-hour datalist
-    const chcData = DATA.city_hourly_counts || {};
+    // Populate city-hour datalist from DATA.cities (all historical cities, always available)
     const cityHourList = document.getElementById('cityHourList');
     if (cityHourList) {
-      const cities = Object.keys(chcData).sort();
+      const cities = Object.keys(DATA.cities || {}).sort();
       cityHourList.innerHTML = cities.map(c => `<option value="${c}">`).join('');
     }
   }
