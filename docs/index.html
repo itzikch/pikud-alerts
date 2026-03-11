@@ -1995,24 +1995,59 @@
     if (!query) { panel.style.display = 'none'; empty.style.display = 'none'; return; }
 
     const chcData = DATA.city_hourly_counts || {};
-    // Case-insensitive exact match first, then prefix match
-    const key = Object.keys(chcData).find(k => k === query)
-             || Object.keys(chcData).find(k => k.toLowerCase() === query.toLowerCase())
-             || Object.keys(chcData).find(k => k.startsWith(query));
+    const hasAllTimeCityData = Object.keys(chcData).length > 0;
+    const ql = query.toLowerCase();
 
-    if (!key) {
+    // Build hourly map: prefer all-time city_hourly_counts, fall back to DATA.recent
+    // Aggregate all matching sub-cities (e.g. "נתניה" matches "נתניה - מזרח" + "נתניה - מערב")
+    let cityHours = null;
+    let key = null;
+    let matchedKeys = [];
+    let isPartial = false;
+
+    if (hasAllTimeCityData) {
+      matchedKeys = Object.keys(chcData).filter(k => k.toLowerCase().includes(ql));
+      if (matchedKeys.length > 0) {
+        key = query;
+        cityHours = {};
+        matchedKeys.forEach(mk => {
+          Object.entries(chcData[mk]).forEach(([h, n]) => {
+            cityHours[h] = (cityHours[h] || 0) + n;
+          });
+        });
+      }
+    }
+
+    // Fallback: compute from DATA.recent (last 100 alerts), aggregate sub-cities
+    if (!cityHours) {
+      const recent = DATA.recent || [];
+      const tempMap = {};
+      recent.forEach(a => {
+        if (!a.date || a.type === 'flash') return;
+        if (!(a.cities || []).some(c => c.toLowerCase().includes(ql))) return;
+        const hour = String((new Date(a.date).getUTCHours() + 2) % 24);
+        tempMap[hour] = (tempMap[hour] || 0) + 1;
+      });
+      if (Object.keys(tempMap).length > 0) {
+        key = query;
+        cityHours = tempMap;
+        isPartial = true;
+      }
+    }
+
+    if (!cityHours) {
       panel.style.display = 'none'; empty.style.display = 'block'; return;
     }
     panel.style.display = 'block'; empty.style.display = 'none';
 
-    const cityHours = chcData[key];
-    const cityTotal = Object.values(cityHours).reduce((a, b) => a + b, 0);
+    const cityTotal  = Object.values(cityHours).reduce((a, b) => a + b, 0);
     const cityCounts = Array.from({length: 24}, (_, i) => cityHours[String(i)] || 0);
+    const subCityNote = matchedKeys.length > 1 ? ` (${matchedKeys.length} sub-areas combined)` : '';
 
     // National hourly counts (all-time)
-    const hc = DATA.hourly_counts || {};
-    const natCounts  = Array.from({length: 24}, (_, i) => hc[String(i)] || 0);
-    const natTotal   = natCounts.reduce((a, b) => a + b, 0) || 1;
+    const hc       = DATA.hourly_counts || {};
+    const natCounts = Array.from({length: 24}, (_, i) => hc[String(i)] || 0);
+    const natTotal  = natCounts.reduce((a, b) => a + b, 0) || 1;
 
     // Normalise: city % vs national %
     const cityPct = cityCounts.map(v => cityTotal ? +((v / cityTotal) * 100).toFixed(1) : 0);
@@ -2021,11 +2056,12 @@
     const peakHour  = cityCounts.indexOf(Math.max(...cityCounts));
     const quietHour = cityCounts.indexOf(Math.min(...cityCounts));
 
+    const totalLabel = isPartial ? `${cityTotal} (recent 100 alerts only)` : `${cityTotal} (all-time)`;
     document.getElementById('cityHourStatsGrid').innerHTML = [
-      { value: key,                                       label: 'City' },
-      { value: cityTotal,                                 label: 'Total alerts (all-time)' },
-      { value: `${String(peakHour).padStart(2,'0')}:00`, label: 'Peak hour (Israel time)' },
-      { value: `${String(quietHour).padStart(2,'0')}:00`,label: 'Quietest hour' },
+      { value: key + subCityNote,                          label: 'City / area' },
+      { value: totalLabel,                                 label: 'Alerts counted' },
+      { value: `${String(peakHour).padStart(2,'0')}:00`,  label: 'Peak hour (Israel time)' },
+      { value: `${String(quietHour).padStart(2,'0')}:00`, label: 'Quietest hour' },
     ].map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`).join('');
 
     const hourLabels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}:00`);
@@ -2036,7 +2072,7 @@
         labels: hourLabels,
         datasets: [
           {
-            label: key,
+            label: key + (isPartial ? ' (recent)' : ''),
             data: cityPct,
             backgroundColor: cityCounts.map((_, i) => i === peakHour ? '#f85149' : '#388bfd'),
             borderRadius: 3,
@@ -2061,7 +2097,7 @@
           legend: { labels: { color: '#8b949e', boxWidth: 14 } },
           tooltip: {
             callbacks: {
-              label: ctx => ctx.dataset.label === key
+              label: ctx => ctx.dataset.label.startsWith(key)
                 ? ` ${ctx.parsed.y}% of city alerts (${cityCounts[ctx.dataIndex]} alerts)`
                 : ` ${ctx.parsed.y}% of national alerts`,
             },
@@ -2078,8 +2114,9 @@
       },
     });
 
-    document.getElementById('cityHourFooter').textContent =
-      `${key}: ${cityTotal} alerts. Blue bars = share of city's own alerts. Yellow line = national hourly distribution.`;
+    document.getElementById('cityHourFooter').textContent = isPartial
+      ? `⚠️ Showing data from the last 100 alerts only. Run the Backfill workflow to get full history.`
+      : `${key}: ${cityTotal} alerts. Blue bars = share of city's own alerts. Yellow line = national average.`;
   }
 
   // ─── Theme toggle ────────────────────────────────────────────────────────────
