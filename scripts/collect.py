@@ -71,6 +71,7 @@ def load_data() -> dict:
             "pending_flash": [],
             "hourly_counts": {str(h): 0 for h in range(24)},
             "city_fp_count": {},   # cities warned in מבזק but absent from subsequent real alert
+            "daily_counts":  {},   # {date: N} — unique alert messages per day (excl. flash)
         }
         for k, v in defaults.items():
             if k not in data:
@@ -89,6 +90,7 @@ def load_data() -> dict:
         "pending_flash": [],
         "hourly_counts": {str(h): 0 for h in range(24)},
         "city_fp_count": {},
+        "daily_counts":  {},
         "daily": {}, "recent": [],
     }
 
@@ -437,6 +439,9 @@ async def collect() -> None:
 
         data["total_alerts"] += 1
         new_alerts += 1
+        # daily_counts tracks unique alert messages per day (not region-multiplied)
+        dc = data.setdefault("daily_counts", {})
+        dc[date_str] = dc.get(date_str, 0) + 1
 
         for region in regions:
             data["regions"][region] = data["regions"].get(region, 0) + 1

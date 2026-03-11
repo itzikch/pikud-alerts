@@ -1361,50 +1361,78 @@
   }
 
   function renderStats() {
-    const daily   = DATA.daily || {};
-    const regions = DATA.regions || {};
+    const daily       = DATA.daily        || {};
+    const dailyCounts = DATA.daily_counts || {};  // unique messages per day
 
-    // Range-filtered totals
+    // ── Range-filtered totals ────────────────────────────────────────────────
     const activeDays = getActiveDays();
     let rangeAlerts = 0;
+    let hasDailyCounts = false;
     const rangeRegionCounts = {};
+
     for (const day of activeDays) {
-      const dayData = daily[day] || {};
-      for (const [r, v] of Object.entries(dayData)) {
-        rangeAlerts += v;
+      // daily_counts gives unique message count (1 per alert, regardless of regions covered)
+      if (dailyCounts[day] !== undefined) {
+        rangeAlerts    += dailyCounts[day];
+        hasDailyCounts  = true;
+      }
+      // Region counts used separately for "Regions Hit" and "Most Hit" cards
+      for (const [r, v] of Object.entries(daily[day] || {})) {
         rangeRegionCounts[r] = (rangeRegionCounts[r] || 0) + v;
       }
     }
-    const rangeTopRegion = Object.entries(rangeRegionCounts).sort((a, b) => b[1] - a[1])[0];
+
+    // Fallback for old data that doesn't have daily_counts yet:
+    // use total_alerts (all-time) so the number is at least correct for all-time range
+    if (!hasDailyCounts) {
+      // Estimate from total_alerts proportionally — not perfect but consistent
+      rangeAlerts = DATA.total_alerts ?? 0;
+    }
+
+    const rangeTopRegion      = Object.entries(rangeRegionCounts).sort((a, b) => b[1] - a[1])[0];
     const rangeRegionsAffected = Object.values(rangeRegionCounts).filter(v => v > 0).length;
 
     const todayStr    = new Date().toISOString().slice(0, 10);
-    const todayAlerts = Object.values(daily[todayStr] || {}).reduce((s, v) => s + v, 0);
+    // Use daily_counts[today] for accuracy; fall back to region-sum for old data
+    const todayAlerts = dailyCounts[todayStr] ??
+      Object.values(daily[todayStr] || {}).reduce((s, v) => s + v, 0);
+
+    // ── All-time totals — always message-based, always add up ────────────────
+    const rocketAllTime = (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0);
+    const droneAllTime  = DATA.drone_alerts   ?? 0;
+    const flashAllTime  = DATA.flash_warnings ?? 0;
+    // Grand total that a user can verify: rockets + drones + flash
+    const grandTotal    = rocketAllTime + droneAllTime + flashAllTime;
 
     // Streaks
-    const streaks = computeStreaks();
-
+    const streaks    = computeStreaks();
     const rangeLabel = getRangeLabel();
+    const oldDataNote = hasDailyCounts ? '' : ' *';
+
     const cards = [
-      { value: rangeAlerts,            label: `Total Alerts (${rangeLabel})` },
-      { value: todayAlerts,            label: 'Today' },
-      { value: rangeRegionsAffected,   label: `Regions Hit (${rangeLabel})` },
+      { value: rangeAlerts,          label: `🚨 Alert Events (${rangeLabel})${oldDataNote}` },
+      { value: todayAlerts,          label: 'Alert Events Today' },
+      { value: rangeRegionsAffected, label: `Regions Hit (${rangeLabel})` },
       { value: rangeTopRegion ? rangeTopRegion[1] : 0,
-        label: `Most Hit: ${rangeTopRegion ? rangeTopRegion[0] : '—'}` },
-      { value: DATA.drone_alerts ?? 0, label: '✈️ Drone Alerts (All Time)' },
-      { value: (DATA.total_alerts ?? 0) - (DATA.drone_alerts ?? 0), label: '🚀 Rocket / Missile (All Time)' },
-      { value: DATA.flash_warnings ?? 0, label: '⚡ Flash Warnings (All Time)' },
-      { value: streaks.current,        label: '🔥 Current Active Streak (days)' },
-      { value: streaks.longest,        label: '📈 Longest Active Streak (days)' },
-      { value: streaks.longestQuiet,   label: '🕊️ Longest Quiet Period (days)' },
+        label: `Most Hit: ${rangeTopRegion ? rangeTopRegion[0].replace('אזור ', '') : '—'}` },
+      { value: rocketAllTime,        label: '🚀 Rocket / Missile (All Time)' },
+      { value: droneAllTime,         label: '✈️ Drone (All Time)' },
+      { value: flashAllTime,         label: '⚡ Flash Warnings (All Time)' },
+      { value: grandTotal,           label: '📡 Total Events All Time (🚀+✈️+⚡)' },
+      { value: streaks.current,      label: '🔥 Current Active Streak (days)' },
+      { value: streaks.longestQuiet, label: '🕊️ Longest Quiet Period (days)' },
     ];
 
     document.getElementById('statsGrid').innerHTML = cards.map(c => `
       <div class="stat-card">
-        <div class="value">${c.value.toLocaleString('en-US')}</div>
+        <div class="value">${typeof c.value === 'number' ? c.value.toLocaleString('en-US') : c.value}</div>
         <div class="label">${c.label}</div>
       </div>
-    `).join('');
+    `).join('') + (hasDailyCounts ? '' :
+      `<p style="grid-column:1/-1;color:var(--text-muted);font-size:11px;margin-top:4px">
+        * Range alert count will be accurate after the next backfill run (data.json currently lacks daily_counts).
+      </p>`
+    );
   }
 
   // ─── Live banner (Feature 4) ──────────────────────────────────────────────
