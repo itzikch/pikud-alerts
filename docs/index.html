@@ -1853,8 +1853,7 @@
     });
 
     // ── Night vs Day donut (Feature 8) ─────────────────────────────────────
-    // Use all-time hourly_counts from Python (Israel time) if available, else recent
-    const hc = DATA.hourly_counts || {};
+    // hc is already declared above; use it directly
     let nightCount = 0, dayCount = 0;
     const hasAllTime = Object.values(hc).some(v => v > 0);
     if (hasAllTime) {
