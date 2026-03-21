@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-03-21T06:49:16.073085+00:00",
+  "last_updated": "2026-03-21T07:32:58.796048+00:00",
   "last_message_id": 29428,
   "total_alerts": 5672,
   "regions": {
@@ -18783,27 +18783,11 @@
   ],
   "flash_conversion": {
     "converted": 929,
-    "not_converted": 172,
+    "not_converted": 173,
     "total_gap_seconds": 342346.0,
     "count_with_gap": 929
   },
-  "pending_flash": [
-    {
-      "time": "2026-03-21T06:24:45+00:00",
-      "cities": [
-        "בית נקופה",
-        "הר אדר",
-        "מבוא ביתר",
-        "מעלה החמישה",
-        "צובה",
-        "צור הדסה",
-        "קריית ענבים"
-      ],
-      "regions": [
-        "אזור שפלת יהודה"
-      ]
-    }
-  ],
+  "pending_flash": [],
   "hourly_counts": {
     "0": 271,
     "1": 231,
