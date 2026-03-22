@@ -12,41 +12,49 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+  <!-- Sentinel design fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
   <style>
     :root {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --surface2: #21262d;
-      --border: #30363d;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --red: #f85149;
+      --bg: #10141a;
+      --surface: #1c2026;
+      --surface2: #262a31;
+      --surface3: #31353c;
+      --border: rgba(91,64,61,0.30);
+      --text: #dfe2eb;
+      --text-muted: #c0c7cd;
+      --red: #ffb4ac;
+      --red-hi: #fe554d;
       --orange: #e3b341;
       --green: #3fb950;
-      --blue: #58a6ff;
+      --blue: #a2c9ff;
       --purple: #bc8cff;
       --teal: #39d353;
-      --chart-grid: #21262d;
-      --chart-tick: #8b949e;
+      --chart-grid: #262a31;
+      --chart-tick: #c0c7cd;
+      --sidebar-w: 256px;
     }
     body.light-mode {
       --bg: #f6f8fa;
       --surface: #ffffff;
       --surface2: #eaeef2;
+      --surface3: #d8dde3;
       --border: #d0d7de;
       --text: #1f2328;
       --text-muted: #57606a;
       --chart-grid: #d0d7de;
       --chart-tick: #57606a;
     }
-    body { transition: background 0.25s, color 0.25s; }
-    .chart-card, nav, header, .range-bar { transition: background 0.25s, border-color 0.25s; }
+    body { transition: background 0.25s, color 0.25s; font-family: 'Inter', 'Segoe UI', Arial, sans-serif; }
+    .chart-card, .range-bar { transition: background 0.25s, border-color 0.25s; }
 
     /* Zone status badges */
     .zone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 10px; margin-bottom: 20px; }
-    .zone-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
-    .zone-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-    .zone-dot.hot  { background: #f85149; box-shadow: 0 0 6px #f85149aa; }
+    .zone-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
+    .zone-card:hover { background: var(--surface3); }
+    .zone-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .zone-dot.hot  { background: #ffb4ac; box-shadow: 0 0 8px rgba(255,180,172,0.6); }
     .zone-dot.warm { background: #e3b341; }
     .zone-dot.quiet { background: #3fb950; }
     .zone-name { font-size: 12px; font-weight: 600; color: var(--text); }
@@ -59,34 +67,111 @@
     .trend-badge.stable { background: #58a6ff20; color: #58a6ff; }
 
     /* Theme toggle */
-    .theme-toggle { margin-left: auto; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 20px; padding: 6px 14px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s; }
-    .theme-toggle:hover { background: var(--border); }
+    .theme-toggle { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 20px; padding: 5px 14px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background 0.2s; font-family: 'Space Grotesk', sans-serif; }
+    .theme-toggle:hover { background: var(--surface2); }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: 'Segoe UI', Arial, sans-serif;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
       font-size: 14px;
       min-height: 100vh;
     }
 
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: #181c22;
+      display: flex; flex-direction: column;
+      z-index: 50;
+      padding: 24px 0;
+    }
+    .sidebar-brand {
+      padding: 0 24px 32px;
+    }
+    .sidebar-brand .brand-name {
+      color: #ffb4ac; font-weight: 800; font-size: 17px;
+      font-family: 'Inter', sans-serif; letter-spacing: -0.3px;
+    }
+    .sidebar-brand .brand-sub {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px; text-transform: uppercase; letter-spacing: 2px;
+      color: var(--text-muted); opacity: 0.6; margin-top: 2px;
+    }
+    .sidebar-nav { flex: 1; overflow-y: auto; }
+    .sidebar-nav button {
+      display: flex; align-items: center; gap: 12px;
+      width: calc(100% - 16px); margin: 2px 8px;
+      background: none; border: none;
+      color: var(--text); cursor: pointer;
+      padding: 11px 16px; border-radius: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+      font-weight: 500; text-align: left;
+      transition: background 0.2s, color 0.2s;
+    }
+    .sidebar-nav button .ms { font-size: 20px; color: #a2c9ff; flex-shrink: 0; }
+    .sidebar-nav button:hover { background: #1c2026; }
+    .sidebar-nav button.active {
+      background: linear-gradient(90deg, #ffb4ac22, #fe554d22);
+      color: #ffb4ac;
+      border-left: 3px solid #ffb4ac;
+      padding-left: 13px;
+    }
+    .sidebar-nav button.active .ms { color: #ffb4ac; }
+    .sidebar-footer {
+      padding: 16px 12px 0;
+      border-top: 1px solid rgba(91,64,61,0.2);
+    }
+
+    /* ── Layout wrapper ── */
+    .layout-wrapper {
+      display: flex; flex-direction: column; min-height: 100vh;
+    }
+    @media (min-width: 640px) {
+      .sidebar { display: flex; }
+      .layout-wrapper { margin-left: var(--sidebar-w); }
+    }
+    @media (max-width: 639px) {
+      .sidebar { display: none; }
+      .layout-wrapper { margin-left: 0; }
+    }
+
     header {
-      background: var(--surface);
+      background: var(--bg);
       border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
+      padding: 14px 24px;
       display: flex;
       align-items: center;
       gap: 12px;
+      position: sticky; top: 0; z-index: 40;
     }
 
-    header .logo { font-size: 28px; }
+    header .logo { font-size: 22px; }
 
     header h1 {
-      font-size: 20px;
-      font-weight: 700;
+      font-size: 18px;
+      font-weight: 900;
       color: var(--text);
+      font-family: 'Inter', sans-serif;
+      letter-spacing: -0.5px;
+    }
+
+    .live-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface); border-radius: 20px;
+      padding: 4px 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px;
+      color: #ffb4ac;
+    }
+    .live-badge-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #ffb4ac; animation: pulse 2s infinite;
+      box-shadow: 0 0 8px rgba(255,180,172,0.6);
     }
 
     header .subtitle {
@@ -98,8 +183,9 @@
     .last-updated {
       margin-left: auto;
       text-align: right;
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-muted);
+      font-family: 'Space Grotesk', sans-serif;
     }
 
     .status-dot {
@@ -121,32 +207,37 @@
       50% { opacity: 0.4; }
     }
 
-    nav {
+    /* mobile tab bar (hidden on desktop where sidebar exists) */
+    nav.mobile-tabs {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
-      padding: 0 24px;
+      padding: 0 16px;
       display: flex;
-      gap: 4px;
+      gap: 2px;
       overflow-x: auto;
     }
+    @media (min-width: 640px) {
+      nav.mobile-tabs { display: none; }
+    }
 
-    nav button {
+    nav.mobile-tabs button {
       background: none;
       border: none;
       border-bottom: 2px solid transparent;
       color: var(--text-muted);
       cursor: pointer;
-      padding: 12px 16px;
-      font-size: 14px;
+      padding: 12px 14px;
+      font-size: 13px;
+      font-family: 'Space Grotesk', sans-serif;
       white-space: nowrap;
       transition: color 0.2s, border-color 0.2s;
     }
 
-    nav button:hover { color: var(--text); }
+    nav.mobile-tabs button:hover { color: var(--text); }
 
-    nav button.active {
-      color: var(--blue);
-      border-bottom-color: var(--blue);
+    nav.mobile-tabs button.active {
+      color: #ffb4ac;
+      border-bottom-color: #ffb4ac;
     }
 
     main {
@@ -169,38 +260,48 @@
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
+      border-radius: 12px;
+      padding: 20px;
       text-align: center;
+      transition: background 0.2s;
     }
+    .stat-card:hover { background: var(--surface2); }
 
     .stat-card .value {
-      font-size: 36px;
-      font-weight: 700;
-      color: var(--red);
+      font-size: 38px;
+      font-weight: 900;
+      color: #ffb4ac;
       line-height: 1;
       margin-bottom: 6px;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: -1px;
     }
 
     .stat-card .label {
-      font-size: 12px;
+      font-size: 10px;
       color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
     }
 
     /* Chart containers */
     .chart-card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
+      border-radius: 16px;
+      padding: 22px;
       margin-bottom: 24px;
     }
 
     .chart-card h2 {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       margin-bottom: 16px;
       color: var(--text);
+      font-family: 'Inter', sans-serif;
+      letter-spacing: -0.3px;
     }
 
     .chart-wrap {
@@ -235,14 +336,18 @@
     .alerts-table th {
       background: var(--surface2);
       color: var(--text-muted);
-      padding: 8px 12px;
+      padding: 9px 14px;
       text-align: left;
       font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       border-bottom: 1px solid var(--border);
     }
 
     .alerts-table td {
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--border);
       vertical-align: top;
     }
@@ -251,11 +356,11 @@
 
     .tag {
       display: inline-block;
-      background: rgba(248, 81, 73, 0.15);
-      color: var(--red);
-      border: 1px solid rgba(248, 81, 73, 0.3);
-      border-radius: 4px;
-      padding: 2px 7px;
+      background: rgba(255,180,172, 0.12);
+      color: #ffb4ac;
+      border: 1px solid rgba(255,180,172, 0.25);
+      border-radius: 6px;
+      padding: 2px 8px;
       font-size: 11px;
       margin: 2px 2px 2px 0;
     }
@@ -299,7 +404,7 @@
     .rank-bar {
       height: 100%;
       border-radius: 4px;
-      background: var(--red);
+      background: linear-gradient(90deg, #ffb4ac, #fe554d);
       transition: width 0.6s ease;
     }
 
@@ -416,7 +521,11 @@
 
     .range-label {
       color: var(--text-muted);
-      font-size: 13px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
     }
 
     .range-btns { display: flex; gap: 4px; }
@@ -424,21 +533,22 @@
     .range-btn {
       background: var(--surface2);
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: 8px;
       color: var(--text-muted);
       cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: 'Space Grotesk', sans-serif;
       padding: 4px 14px;
       transition: all 0.15s;
     }
 
-    .range-btn:hover { color: var(--text); border-color: var(--blue); }
+    .range-btn:hover { color: var(--text); border-color: #a2c9ff; }
 
     .range-btn.active {
-      background: var(--blue);
-      border-color: var(--blue);
-      color: #fff;
+      background: #a2c9ff;
+      border-color: #a2c9ff;
+      color: #001c38;
     }
 
     .range-sep {
@@ -511,14 +621,16 @@
       display: none;
       align-items: center;
       gap: 10px;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-weight: 500;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif;
+      letter-spacing: 0.3px;
     }
-    .live-banner.critical { background: #f8514920; border-bottom: 2px solid #f85149; color: #f85149; }
-    .live-banner.warning  { background: #e3b34120; border-bottom: 2px solid #e3b341; color: #e3b341; }
+    .live-banner.critical { background: rgba(255,180,172,0.1); border-bottom: 2px solid #ffb4ac; color: #ffb4ac; }
+    .live-banner.warning  { background: rgba(227,179,65,0.1); border-bottom: 2px solid #e3b341; color: #e3b341; }
     .live-banner .live-dot {
-      width: 10px; height: 10px; border-radius: 50%;
+      width: 9px; height: 9px; border-radius: 50%;
       background: currentColor; flex-shrink: 0;
       animation: pulse 1.2s ease-in-out infinite;
     }
@@ -532,7 +644,7 @@
     }
     .modal-box {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 28px; width: min(640px, 94vw);
+      border-radius: 20px; padding: 28px; width: min(640px, 94vw);
       max-height: 85vh; overflow-y: auto; position: relative;
     }
     .modal-close {
@@ -594,33 +706,91 @@
 </head>
 <body>
 
+<!-- ── Sidebar Navigation ── -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-name">🚨 Pikud HaOref</div>
+    <div class="brand-sub">Alert Intelligence Dashboard</div>
+  </div>
+  <div class="sidebar-nav">
+    <button class="active" data-tab="general">
+      <span class="material-symbols-outlined ms">dashboard</span>General
+    </button>
+    <button data-tab="byregion">
+      <span class="material-symbols-outlined ms">public</span>By Region
+    </button>
+    <button data-tab="ranking">
+      <span class="material-symbols-outlined ms">leaderboard</span>Ranking
+    </button>
+    <button data-tab="bycity">
+      <span class="material-symbols-outlined ms">location_city</span>By City
+    </button>
+    <button data-tab="byhour">
+      <span class="material-symbols-outlined ms">schedule</span>By Hour
+    </button>
+    <button data-tab="shelter">
+      <span class="material-symbols-outlined ms">emergency_home</span>Shelter Time
+    </button>
+    <button data-tab="drone">
+      <span class="material-symbols-outlined ms">airplanemode_active</span>Drones
+    </button>
+    <button data-tab="flash">
+      <span class="material-symbols-outlined ms">bolt</span>Flash Warnings
+    </button>
+    <button data-tab="trends">
+      <span class="material-symbols-outlined ms">trending_up</span>Trends
+    </button>
+    <button data-tab="compare">
+      <span class="material-symbols-outlined ms">compare_arrows</span>Compare
+    </button>
+    <button data-tab="heatmap">
+      <span class="material-symbols-outlined ms">grid_on</span>Heat Map
+    </button>
+    <button data-tab="map">
+      <span class="material-symbols-outlined ms">map</span>Map
+    </button>
+    <button data-tab="mycity">
+      <span class="material-symbols-outlined ms">home</span>My City
+    </button>
+  </div>
+  <div class="sidebar-footer">
+    <button class="theme-toggle" id="themeToggleSide" onclick="toggleTheme()" style="width:100%;justify-content:center;margin-bottom:8px">☀️ Light Mode</button>
+  </div>
+</nav>
+
+<!-- ── Main Layout ── -->
+<div class="layout-wrapper">
+
 <header>
   <span class="logo">🚨</span>
   <div>
-    <h1>Pikud HaOref Alerts Dashboard</h1>
-    <div class="subtitle">Real-time data from @PikudHaOref_all Telegram channel</div>
+    <h1>Sentinel Dashboard</h1>
+  </div>
+  <div class="live-badge">
+    <div class="live-badge-dot"></div>
+    Live
   </div>
   <div class="last-updated" id="lastUpdated">
-    <span class="status-dot"></span>
     Loading...
   </div>
-  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">☀️ Light</button>
+  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" style="display:none">☀️ Light</button>
 </header>
 
-<nav>
+<!-- Mobile tab bar (desktop uses sidebar) -->
+<nav class="mobile-tabs">
   <button class="active" data-tab="general">General</button>
   <button data-tab="byregion">By Region</button>
   <button data-tab="ranking">Ranking</button>
   <button data-tab="bycity">By City</button>
   <button data-tab="byhour">By Hour</button>
-  <button data-tab="shelter">Shelter Time</button>
-  <button data-tab="drone">✈️ Drones</button>
-  <button data-tab="flash">⚡ Flash</button>
-  <button data-tab="trends">📈 Trends</button>
+  <button data-tab="shelter">Shelter</button>
+  <button data-tab="drone">Drones</button>
+  <button data-tab="flash">Flash</button>
+  <button data-tab="trends">Trends</button>
   <button data-tab="compare">Compare</button>
   <button data-tab="heatmap">Heat Map</button>
-  <button data-tab="map">🗺️ Map</button>
-  <button data-tab="mycity">🏠 My City</button>
+  <button data-tab="map">Map</button>
+  <button data-tab="mycity">My City</button>
 </nav>
 
 <!-- Live situation banner -->
@@ -1225,21 +1395,21 @@
   }
 
   // ─── Tabs ──────────────────────────────────────────────────────────────────
-  document.querySelectorAll('nav button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      setHashParam('tab', btn.dataset.tab);
-      // Leaflet needs a size recalculation after the container becomes visible
-      if (btn.dataset.tab === 'map') {
-        if (currentMapMode === '2d' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 50);
-        else if (currentMapMode === '3d') setTimeout(() => render3DMap(), 80);
-      }
-      // My City: re-populate datalist whenever tab is opened
-      if (btn.dataset.tab === 'mycity') renderMyCity();
-    });
+  function activateTab(tabId) {
+    document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll(`[data-tab="${tabId}"]`).forEach(b => b.classList.add('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    setHashParam('tab', tabId);
+    if (tabId === 'map') {
+      if (currentMapMode === '2d' && leafletMap) setTimeout(() => leafletMap.invalidateSize(), 50);
+      else if (currentMapMode === '3d') setTimeout(() => render3DMap(), 80);
+    }
+    if (tabId === 'mycity') renderMyCity();
+  }
+
+  document.querySelectorAll('[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.tab));
   });
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -2122,7 +2292,9 @@
   function toggleTheme() {
     const isLight = document.body.classList.toggle('light-mode');
     localStorage.setItem('pikud-theme', isLight ? 'light' : 'dark');
-    document.getElementById('themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
+    const label = isLight ? '🌙 Dark Mode' : '☀️ Light Mode';
+    const sideBtn = document.getElementById('themeToggleSide');
+    if (sideBtn) sideBtn.textContent = label;
     // Re-render charts so axis/grid colors update
     renderDailyChart(); renderByRegion(); renderRanking(); renderByCity();
     renderByHour(); renderShelter(); renderDrone(); renderFlash(); renderMap(); renderWeeklyTrend(); renderCompare(); renderHeatmap(); renderMyCity();
@@ -3341,21 +3513,14 @@
     const savedTheme = localStorage.getItem('pikud-theme');
     if (savedTheme === 'light') {
       document.body.classList.add('light-mode');
-      const btn = document.getElementById('themeToggle');
-      if (btn) btn.textContent = '🌙 Dark';
+      const sideBtn = document.getElementById('themeToggleSide');
+      if (sideBtn) sideBtn.textContent = '🌙 Dark Mode';
     }
 
     // Restore tab + range from URL hash (Feature 9)
     const hashParams = getHashParams();
-    if (hashParams.tab) {
-      const tabBtn = document.querySelector(`nav button[data-tab="${hashParams.tab}"]`);
-      if (tabBtn) {
-        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        tabBtn.classList.add('active');
-        const tabEl = document.getElementById('tab-' + hashParams.tab);
-        if (tabEl) tabEl.classList.add('active');
-      }
+    if (hashParams.tab && document.querySelector(`[data-tab="${hashParams.tab}"]`)) {
+      activateTab(hashParams.tab);
     }
     if (hashParams.range && !CUSTOM_RANGE) {
       const days = parseInt(hashParams.range);
@@ -3390,6 +3555,9 @@
 
   // Auto-refresh every 5 minutes
   setInterval(init, 5 * 60 * 1000);
+
 </script>
+
+</div><!-- /.layout-wrapper -->
 </body>
 </html>
