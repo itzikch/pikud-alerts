@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-06-05T21:55:58.814959+00:00",
+  "last_updated": "2026-06-05T23:11:10.597515+00:00",
   "last_message_id": 35808,
   "total_alerts": 9860,
   "regions": {
@@ -14233,30 +14233,11 @@
   ],
   "flash_conversion": {
     "converted": 1492,
-    "not_converted": 235,
+    "not_converted": 236,
     "total_gap_seconds": 508028.0,
     "count_with_gap": 1492
   },
-  "pending_flash": [
-    {
-      "time": "2026-06-05T20:45:45+00:00",
-      "cities": [
-        "כפר גלעדי",
-        "כפר יובל",
-        "מטולה",
-        "מנרה",
-        "מעיין ברוך",
-        "מרגליות",
-        "משגב עם",
-        "ע'ג'ר",
-        "קריית שמונה",
-        "תל חי"
-      ],
-      "regions": [
-        "אזור קו העימות"
-      ]
-    }
-  ],
+  "pending_flash": [],
   "hourly_counts": {
     "0": 393,
     "1": 326,
