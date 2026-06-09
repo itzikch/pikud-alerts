@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-06-09T21:14:01.646747+00:00",
+  "last_updated": "2026-06-09T22:52:00.473732+00:00",
   "last_message_id": 35958,
   "total_alerts": 9932,
   "regions": {
@@ -14751,25 +14751,11 @@
   ],
   "flash_conversion": {
     "converted": 1528,
-    "not_converted": 239,
+    "not_converted": 240,
     "total_gap_seconds": 519174.0,
     "count_with_gap": 1528
   },
-  "pending_flash": [
-    {
-      "time": "2026-06-09T20:49:57+00:00",
-      "cities": [
-        "כפר גלעדי",
-        "מטולה",
-        "מרגליות",
-        "משגב עם",
-        "קריית שמונה"
-      ],
-      "regions": [
-        "אזור קו העימות"
-      ]
-    }
-  ],
+  "pending_flash": [],
   "hourly_counts": {
     "0": 393,
     "1": 329,
